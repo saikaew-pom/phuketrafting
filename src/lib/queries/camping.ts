@@ -10,6 +10,7 @@ export interface CampZone {
   amenities: string; // JSON array, stringified
   is_active: number;
   sort_order: number;
+  cover_image_id: string | null;
 }
 
 export interface CampRate {
@@ -47,16 +48,25 @@ export interface CampZoneUpdate {
   tagline: string;
   description: string;
   is_active: boolean;
+  cover_image_id: string;
 }
 
 export async function updateCampZone(id: string, update: CampZoneUpdate): Promise<void> {
   await getDb()
     .prepare(
       `UPDATE camp_zones
-          SET name = ?1, tagline = ?2, description = ?3, is_active = ?4, updated_at = unixepoch()
-        WHERE id = ?5`
+          SET name = ?1, tagline = ?2, description = ?3, is_active = ?4,
+              cover_image_id = ?5, updated_at = unixepoch()
+        WHERE id = ?6`
     )
-    .bind(update.name, update.tagline || null, update.description || null, update.is_active ? 1 : 0, id)
+    .bind(
+      update.name,
+      update.tagline || null,
+      update.description || null,
+      update.is_active ? 1 : 0,
+      update.cover_image_id || null,
+      id
+    )
     .run();
 }
 

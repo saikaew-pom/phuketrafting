@@ -15,6 +15,7 @@ export interface Tour {
   badge: string | null;
   is_active: number;
   sort_order: number;
+  cover_image_id: string | null;
 }
 
 export interface TourRate {
@@ -52,6 +53,7 @@ export interface TourUpdate {
   description: string;
   badge: string;
   is_active: boolean;
+  cover_image_id: string;
 }
 
 export async function updateTour(id: string, update: TourUpdate): Promise<void> {
@@ -59,8 +61,8 @@ export async function updateTour(id: string, update: TourUpdate): Promise<void> 
     .prepare(
       `UPDATE tours
           SET name = ?1, tagline = ?2, description = ?3, badge = ?4,
-              is_active = ?5, updated_at = unixepoch()
-        WHERE id = ?6`
+              is_active = ?5, cover_image_id = ?6, updated_at = unixepoch()
+        WHERE id = ?7`
     )
     .bind(
       update.name,
@@ -68,6 +70,7 @@ export async function updateTour(id: string, update: TourUpdate): Promise<void> 
       update.description || null,
       update.badge || null,
       update.is_active ? 1 : 0,
+      update.cover_image_id || null,
       id
     )
     .run();

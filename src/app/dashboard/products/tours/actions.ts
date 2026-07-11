@@ -15,6 +15,7 @@ export async function saveTour(tourId: string, formData: FormData) {
     description: String(formData.get("description") ?? "").trim(),
     badge: String(formData.get("badge") ?? "").trim(),
     is_active: formData.get("is_active") === "on",
+    cover_image_id: String(formData.get("cover_image_id") ?? "").trim(),
   });
 
   // Every rate row on the form is named rate-<rateId>; update each that changed.

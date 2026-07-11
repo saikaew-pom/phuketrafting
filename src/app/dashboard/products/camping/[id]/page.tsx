@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getCampZone, getCampRates } from "@/lib/queries/camping";
 import { saveCampZone } from "../actions";
+import { ImageUploadField } from "@/components/ImageUploadField";
 
 export default async function CampZoneEditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -33,6 +34,7 @@ export default async function CampZoneEditPage({ params }: { params: Promise<{ i
         <label>
           <input type="checkbox" name="is_active" defaultChecked={zone.is_active === 1} /> Active (visible on site)
         </label>
+        <ImageUploadField name="cover_image_id" initialPublicId={zone.cover_image_id} label="Cover image" />
 
         <h2>Stay packages (THB / night)</h2>
         <table style={{ borderCollapse: "collapse" }}>

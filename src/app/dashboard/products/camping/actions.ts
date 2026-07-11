@@ -14,6 +14,7 @@ export async function saveCampZone(zoneId: string, formData: FormData) {
     tagline: String(formData.get("tagline") ?? "").trim(),
     description: String(formData.get("description") ?? "").trim(),
     is_active: formData.get("is_active") === "on",
+    cover_image_id: String(formData.get("cover_image_id") ?? "").trim(),
   });
 
   // Rate rows are named rate-weekday-<id> / rate-weekend-<id>.

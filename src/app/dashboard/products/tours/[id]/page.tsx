@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getTour, getTourRates } from "@/lib/queries/tours";
 import { saveTour } from "../actions";
+import { ImageUploadField } from "@/components/ImageUploadField";
 
 export default async function TourEditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -37,6 +38,7 @@ export default async function TourEditPage({ params }: { params: Promise<{ id: s
         <label>
           <input type="checkbox" name="is_active" defaultChecked={tour.is_active === 1} /> Active (visible on site)
         </label>
+        <ImageUploadField name="cover_image_id" initialPublicId={tour.cover_image_id} label="Cover image" />
 
         <h2>Pricing (THB)</h2>
         {rates.map((rate) => (
