@@ -16,5 +16,38 @@ DEV_AUTH_BYPASS=true
 # BUILD_AND_DEPLOY_PLAN.md §1a and §14 item 6/7). Not needed for local dev
 # while DEV_AUTH_BYPASS=true, but required for `wrangler deploy` to work
 # against a real Access-gated /dashboard.
-# CF_ACCESS_TEAM_DOMAIN=https://your-team-name.cloudflareaccess.com
-# CF_ACCESS_AUD=
+CF_ACCESS_TEAM_DOMAIN=
+CF_ACCESS_AUD=
+
+# ---------------------------------------------------------------------------
+# Everything below is a SERVER-ONLY secret read via getCloudflareContext().env
+# (see lib/access.ts / lib/db.ts for the pattern) -- never process.env, and
+# never NEXT_PUBLIC_ prefixed. Belongs here for local dev; the production/
+# staging equivalent is `wrangler secret put <NAME>` (or --env staging), not
+# a committed file. None of these are wired into app code yet -- placeholders
+# for the phases that need them, per BUILD_AND_DEPLOY_PLAN.md.
+# ---------------------------------------------------------------------------
+
+# AI (plan §8) -- Anthropic-compatible SDK with a baseURL override.
+MINIMAX_API_KEY=
+MINIMAX_BASE_URL=
+
+# Stripe (plan §4) -- Checkout Session + webhook.
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+
+# Twilio WhatsApp (plan §9) -- webhook signature validation uses the auth token.
+# TWILIO_WHATSAPP_NUMBER is still unresolved, see plan §14 item 1 (number conflict).
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_WHATSAPP_NUMBER=
+
+# Brevo (plan: Email layer) -- sendEmail() helper.
+BREVO_API_KEY=
+
+# Cloudflare Turnstile (plan §11) -- SECRET key for server-side verification.
+# The site key is public and goes in .env.local instead (see .env.local.example).
+TURNSTILE_SECRET_KEY=
+
+# Error monitoring (plan §11).
+SENTRY_DSN=
