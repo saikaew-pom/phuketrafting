@@ -1,7 +1,14 @@
 import type { NextConfig } from "next";
+import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  images: {
+    // Phase 2 replaces this with a custom loader against Cloudflare Images
+    // once the account-level Images product + named variants are set up.
+    unoptimized: true,
+  },
 };
+
+initOpenNextCloudflareForDev();
 
 export default nextConfig;

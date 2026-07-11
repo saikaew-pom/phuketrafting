@@ -1,0 +1,55 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "phuket-rafting",
+  // Points at the custom wrapper below, not .open-next/worker.js directly —
+  // the generated worker only exports `fetch`; Cron Triggers need `scheduled` too.
+  "main": "./custom-worker.ts",
+  "compatibility_date": "2026-07-11",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+
+  "services": [
+    { "binding": "WORKER_SELF_REFERENCE", "service": "phuket-rafting" }
+  ],
+
+  // Business data (bookings, tours, camp inventory, blog, etc.) — Supabase's replacement.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "phuket-rafting-db",
+      "database_id": "5f05242b-4755-4343-b48e-8a4e5d3c2f24"
+    }
+  ],
+
+  // OpenNext's ISR/data incremental cache. Binding name is fixed by the adapter.
+  "r2_buckets": [
+    {
+      "binding": "NEXT_INC_CACHE_R2_BUCKET",
+      "bucket_name": "phuket-rafting-isr-cache"
+    }
+  ],
+
+  // Revalidation queue + sharded tag cache — DO-based, the adapter's recommended
+  // production setup (D1 tag cache is documented as low-traffic-only).
+  "durable_objects": {
+    "bindings": [
+      { "name": "NEXT_CACHE_DO_QUEUE", "class_name": "DOQueueHandler" },
+      { "name": "NEXT_TAG_CACHE_DO_SHARDED", "class_name": "DOShardedTagCache" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["DOQueueHandler", "DOShardedTagCache"] }
+  ],
+
+  // Booking-expiry sweep (every 15 min) + pre-arrival reminder emails (daily 01:00 UTC).
+  // Handlers land in Phase 4/9 — custom-worker.ts's scheduled() dispatches on event.cron.
+  "triggers": {
+    "crons": ["*/15 * * * *", "0 1 * * *"]
+  },
+
+  "observability": { "enabled": true }
+}
