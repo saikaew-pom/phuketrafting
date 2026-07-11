@@ -1,0 +1,20 @@
+# Copy to .dev.vars (gitignored) and fill in for local development.
+
+# Cloudflare Access cannot reach localhost, so Cf-Access-Jwt-Assertion is
+# never present locally. Set true to use the dev-only mock identity
+# (dev-admin@localhost) in lib/access.ts instead — guarded by a hard check
+# that the request's Host header is localhost/127.0.0.1 (NOT a NODE_ENV
+# check: `opennextjs-cloudflare build` always runs `next build`, which
+# inlines NODE_ENV="production" even for local `npm run preview`, so that
+# signal can't tell local preview apart from a real deploy). Combined with
+# this var only ever existing in this gitignored file (never uploaded by
+# `wrangler deploy`), a real deployed Worker can never receive traffic with
+# a localhost Host header, so the bypass can't take effect in production.
+DEV_AUTH_BYPASS=true
+
+# Filled in once the Cloudflare Access application exists (see
+# BUILD_AND_DEPLOY_PLAN.md §1a and §14 item 6/7). Not needed for local dev
+# while DEV_AUTH_BYPASS=true, but required for `wrangler deploy` to work
+# against a real Access-gated /dashboard.
+# CF_ACCESS_TEAM_DOMAIN=https://your-team-name.cloudflareaccess.com
+# CF_ACCESS_AUD=

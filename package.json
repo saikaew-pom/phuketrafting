@@ -13,6 +13,7 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
   },
   "dependencies": {
+    "jose": "^6.2.3",
     "next": "16.2.10",
     "react": "19.2.4",
     "react-dom": "19.2.4"
@@ -32,6 +33,7 @@
     "esbuild@0.28.1": true,
     "sharp@0.34.5": true,
     "unrs-resolver@1.12.2": true,
-    "workerd@1.20260708.1": true
+    "workerd@1.20260708.1": true,
+    "fsevents@2.3.3": true
   }
 }
