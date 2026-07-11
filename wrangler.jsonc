@@ -51,5 +51,38 @@
     "crons": ["*/15 * * * *", "0 1 * * *"]
   },
 
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+
+  // Named "staging" environment (separate Worker: phuket-rafting-staging) so manual QA
+  // deploys never touch the production D1 database (plan §1 gotcha #9). Deploy with
+  // `wrangler deploy --env staging`. Confirmed via `wrangler deploy --dry-run --env staging`
+  // that durable_objects/r2_buckets/services are NOT inherited from top-level per named
+  // environment (d1_databases/triggers/migrations either don't need it or aren't flagged) —
+  // every non-inherited binding is redeclared below, pointed at staging-only resources.
+  "env": {
+    "staging": {
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "phuket-rafting-db-staging",
+          "database_id": "75068954-1889-4e3e-8d7b-bb8586a6be2b"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "NEXT_INC_CACHE_R2_BUCKET",
+          "bucket_name": "phuket-rafting-isr-cache-staging"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "NEXT_CACHE_DO_QUEUE", "class_name": "DOQueueHandler" },
+          { "name": "NEXT_TAG_CACHE_DO_SHARDED", "class_name": "DOShardedTagCache" }
+        ]
+      },
+      "services": [
+        { "binding": "WORKER_SELF_REFERENCE", "service": "phuket-rafting-staging" }
+      ]
+    }
+  }
 }
