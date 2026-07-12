@@ -110,6 +110,39 @@ export async function listAvailableTourSessions(
 
 const ACTIVE_BOOKING_STATUSES = ["pending", "confirmed"] as const;
 
+// bookingColumns' keys become raw SQL column names (see the query below) --
+// an allowlist closes the injection surface flagged when this function had
+// no real caller yet. Every guest/booking-detail column a NEW camp booking
+// can legitimately set at creation time; deliberately excludes system-
+// managed columns (status/checked_in/payment_status/stripe_*/manage_token/
+// last_*_sent_at/last_*_status/created_at/updated_at) and tour_session_id
+// (not applicable to camp bookings -- that's the tour-booking path).
+const ALLOWED_CAMP_BOOKING_COLUMNS = new Set([
+  "adults",
+  "children",
+  "infants",
+  "hotel",
+  "pickup_zone_id",
+  "transfer_fee",
+  "addon_choice",
+  "subtotal",
+  "discount_amount",
+  "total",
+  "currency",
+  "deposit_amount",
+  "balance_amount",
+  "guest_name",
+  "guest_email",
+  "guest_phone",
+  "locale",
+  "source",
+  "booked_by_agent_id",
+  "promo_code_id",
+  "consent_marketing",
+  "waiver_acknowledged",
+  "notes",
+]);
+
 /**
  * Atomically inserts a camp booking iff the unit is not blocked AND no
  * active (pending/confirmed) booking on the same unit overlaps [checkIn,
@@ -125,6 +158,12 @@ export async function claimCampUnitBooking(params: {
   bookingColumns: Record<string, string | number | null>;
 }): Promise<CapacityResult> {
   const db = getDb();
+
+  for (const key of Object.keys(params.bookingColumns)) {
+    if (!ALLOWED_CAMP_BOOKING_COLUMNS.has(key)) {
+      throw new Error(`claimCampUnitBooking: "${key}" is not an allowed bookingColumns key`);
+    }
+  }
 
   const columns = ["id", "type", "camp_unit_id", "check_in", "check_out", ...Object.keys(params.bookingColumns)];
   const insertValues = [
