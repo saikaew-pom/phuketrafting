@@ -83,6 +83,43 @@
       "services": [
         { "binding": "WORKER_SELF_REFERENCE", "service": "phuket-rafting-staging" }
       ]
+    },
+
+    // Named "production" environment pointed at the SAME live Worker/resources
+    // as the top-level config (not a new/separate Worker) -- "name" is
+    // required here, otherwise a named environment with no override deploys
+    // to an auto-suffixed Worker like "phuket-rafting-production", a
+    // different Worker than the one actually serving phuket-rafting.pskspace.workers.dev.
+    // Exists so `deploy`/`upload` can require `--env production` explicitly
+    // (see package.json) instead of relying on the bare top-level config as
+    // an implicit "no env chosen" default, which is easy to hit by accident
+    // (e.g. forgetting `--env staging` on a QA deploy). The top-level config
+    // is intentionally left as-is (not stripped) -- it's still needed for
+    // local `npm run preview`/`wrangler dev`, which don't pass --env at all.
+    "production": {
+      "name": "phuket-rafting",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "phuket-rafting-db",
+          "database_id": "5f05242b-4755-4343-b48e-8a4e5d3c2f24"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "NEXT_INC_CACHE_R2_BUCKET",
+          "bucket_name": "phuket-rafting-isr-cache"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "NEXT_CACHE_DO_QUEUE", "class_name": "DOQueueHandler" },
+          { "name": "NEXT_TAG_CACHE_DO_SHARDED", "class_name": "DOShardedTagCache" }
+        ]
+      },
+      "services": [
+        { "binding": "WORKER_SELF_REFERENCE", "service": "phuket-rafting" }
+      ]
     }
   }
 }
