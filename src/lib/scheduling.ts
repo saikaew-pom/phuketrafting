@@ -1,0 +1,221 @@
+import { getDb } from "@/lib/db";
+
+/**
+ * Capacity-safe primitives for the two booking models (plan §2), both
+ * documented in their originating migrations:
+ *
+ * - Tour sessions (migrations/0002_tours_and_sessions.sql): a maintained
+ *   `booked_count` counter, claimed/released via ONE guarded UPDATE. D1 has
+ *   no BEGIN/COMMIT, so a separate check-then-write would race; the WHERE
+ *   clause folds the check into the write itself. Proven under real
+ *   concurrency in Phase 1 (10 concurrent claims against capacity 5 -> exactly
+ *   5 succeeded).
+ * - Camp units (migrations/0003_camping.sql / 0005_bookings.sql): no counter
+ *   -- availability is "unit not blocked AND no overlapping pending/confirmed
+ *   booking for this unit", checked via a guarded INSERT ... SELECT ... WHERE
+ *   EXISTS (not blocked) AND NOT EXISTS (no overlap). Both conditions live in
+ *   that one statement -- same reasoning as tour sessions above: a separate
+ *   is_blocked pre-read followed by the insert would leave a gap where a
+ *   concurrent block (e.g. staff pulling a unit for maintenance) between the
+ *   read and the write goes unseen by the write.
+ *
+ * Both return a typed reason on failure so callers can show the guest a
+ * specific message instead of a generic "something went wrong".
+ */
+
+export type CapacityFailureReason = "not_found" | "no_capacity" | "blocked";
+
+export interface CapacityResult {
+  success: boolean;
+  reason?: CapacityFailureReason;
+}
+
+/**
+ * Claims (delta > 0) or releases (delta < 0) seats on a tour session.
+ * Safe to call concurrently -- see module comment. `delta` of 0 is a no-op
+ * that still reports whether the session exists/has room, useful for a
+ * pure availability check without mutating anything.
+ */
+export async function claimTourSessionCapacity(sessionId: string, delta: number): Promise<CapacityResult> {
+  const db = getDb();
+
+  if (delta === 0) {
+    const session = await db
+      .prepare("SELECT capacity, booked_count, allotment_hold, is_blocked FROM tour_sessions WHERE id = ?1")
+      .bind(sessionId)
+      .first<{ capacity: number; booked_count: number; allotment_hold: number; is_blocked: number }>();
+    if (!session) return { success: false, reason: "not_found" };
+    if (session.is_blocked) return { success: false, reason: "blocked" };
+    if (session.booked_count >= session.capacity - session.allotment_hold) {
+      return { success: false, reason: "no_capacity" };
+    }
+    return { success: true };
+  }
+
+  const result = await db
+    .prepare(
+      `UPDATE tour_sessions
+          SET booked_count = booked_count + ?1, updated_at = unixepoch()
+        WHERE id = ?2
+          AND is_blocked = 0
+          AND booked_count + ?1 >= 0
+          AND booked_count + ?1 <= capacity - allotment_hold`
+    )
+    .bind(delta, sessionId)
+    .run();
+
+  if (result.meta.changes > 0) return { success: true };
+
+  // Zero rows changed -- work out *why* for a better error message. The
+  // session's current state may have moved since the UPDATE ran, but this
+  // read-after-write is diagnostic only (not used to decide anything).
+  const session = await db
+    .prepare("SELECT is_blocked FROM tour_sessions WHERE id = ?1")
+    .bind(sessionId)
+    .first<{ is_blocked: number }>();
+  if (!session) return { success: false, reason: "not_found" };
+  if (session.is_blocked) return { success: false, reason: "blocked" };
+  return { success: false, reason: "no_capacity" };
+}
+
+export interface AvailableTourSession {
+  id: string;
+  date: string;
+  start_time: string;
+  capacity: number;
+  booked_count: number;
+  allotment_hold: number;
+}
+
+/** Tour sessions with at least one open seat, in a date range, for one tour. */
+export async function listAvailableTourSessions(
+  tourId: string,
+  fromDate: string,
+  toDate: string
+): Promise<AvailableTourSession[]> {
+  const { results } = await getDb()
+    .prepare(
+      `SELECT id, date, start_time, capacity, booked_count, allotment_hold
+         FROM tour_sessions
+        WHERE tour_id = ?1
+          AND date >= ?2 AND date <= ?3
+          AND is_blocked = 0
+          AND booked_count < capacity - allotment_hold
+        ORDER BY date, start_time`
+    )
+    .bind(tourId, fromDate, toDate)
+    .all<AvailableTourSession>();
+  return results;
+}
+
+const ACTIVE_BOOKING_STATUSES = ["pending", "confirmed"] as const;
+
+/**
+ * Atomically inserts a camp booking iff the unit is not blocked AND no
+ * active (pending/confirmed) booking on the same unit overlaps [checkIn,
+ * checkOut). Half-open range -- a checkout on day N and a new check-in on
+ * day N do not overlap. Returns the failure reason without inserting
+ * anything if the unit is unavailable.
+ */
+export async function claimCampUnitBooking(params: {
+  bookingId: string;
+  campUnitId: string;
+  checkIn: string;
+  checkOut: string;
+  bookingColumns: Record<string, string | number | null>;
+}): Promise<CapacityResult> {
+  const db = getDb();
+
+  const columns = ["id", "type", "camp_unit_id", "check_in", "check_out", ...Object.keys(params.bookingColumns)];
+  const insertValues = [
+    params.bookingId,
+    "camp",
+    params.campUnitId,
+    params.checkIn,
+    params.checkOut,
+    ...Object.values(params.bookingColumns),
+  ];
+
+  // Unnumbered "?" placeholders throughout, bound as one flat array in the
+  // exact order they appear below -- with three separate value lists
+  // (insert columns, then the is_blocked check's own param, then the
+  // overlap-check's own params) feeding one dynamically-sized query,
+  // numbered placeholders (?1, ?2, ...) would need hand-computed offsets
+  // that are easy to get subtly wrong; positional "?" sidesteps that
+  // entirely.
+  const bindValues = [
+    ...insertValues,
+    params.campUnitId,
+    params.campUnitId,
+    ...ACTIVE_BOOKING_STATUSES,
+    params.checkOut,
+    params.checkIn,
+  ];
+
+  // Both the is_blocked check AND the overlap check are folded into this ONE
+  // guarded INSERT ... SELECT ... WHERE, same as claimTourSessionCapacity's
+  // guarded UPDATE -- a separate pre-read of is_blocked (checked, then a
+  // later separate write) would reopen exactly the race this module exists
+  // to avoid: the unit could be blocked by a concurrent staff action in the
+  // gap between the read and the write, and the write wouldn't see it.
+  const result = await db
+    .prepare(
+      `INSERT INTO bookings (${columns.join(", ")})
+       SELECT ${columns.map(() => "?").join(", ")}
+        WHERE EXISTS (
+          SELECT 1 FROM camp_units u WHERE u.id = ? AND u.is_blocked = 0
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM bookings b
+           WHERE b.camp_unit_id = ?
+             AND b.status IN (${ACTIVE_BOOKING_STATUSES.map(() => "?").join(",")})
+             AND b.check_in < ?
+             AND b.check_out > ?
+        )`
+    )
+    .bind(...bindValues)
+    .run();
+
+  if (result.meta.changes > 0) return { success: true };
+
+  // Zero rows -- work out *why* for a better error message, same pattern as
+  // claimTourSessionCapacity: this read-after-write is diagnostic only (not
+  // used to decide anything -- `success` above was already decided by the
+  // one atomic guarded statement).
+  const unit = await db
+    .prepare("SELECT is_blocked FROM camp_units WHERE id = ?1")
+    .bind(params.campUnitId)
+    .first<{ is_blocked: number }>();
+  if (!unit) return { success: false, reason: "not_found" };
+  if (unit.is_blocked) return { success: false, reason: "blocked" };
+  return { success: false, reason: "no_capacity" };
+}
+
+export interface CampAvailabilityWindow {
+  campUnitId: string;
+  checkIn: string;
+  checkOut: string;
+}
+
+/** True if the unit has no active booking overlapping [checkIn, checkOut). */
+export async function isCampUnitAvailable({ campUnitId, checkIn, checkOut }: CampAvailabilityWindow): Promise<boolean> {
+  const db = getDb();
+  const unit = await db
+    .prepare("SELECT is_blocked FROM camp_units WHERE id = ?1")
+    .bind(campUnitId)
+    .first<{ is_blocked: number }>();
+  if (!unit || unit.is_blocked) return false;
+
+  const overlap = await db
+    .prepare(
+      `SELECT 1 FROM bookings
+        WHERE camp_unit_id = ?
+          AND status IN (${ACTIVE_BOOKING_STATUSES.map(() => "?").join(",")})
+          AND check_in < ?
+          AND check_out > ?
+        LIMIT 1`
+    )
+    .bind(campUnitId, ...ACTIVE_BOOKING_STATUSES, checkOut, checkIn)
+    .first();
+  return !overlap;
+}
