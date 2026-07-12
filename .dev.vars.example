@@ -43,7 +43,14 @@ TWILIO_AUTH_TOKEN=
 TWILIO_WHATSAPP_NUMBER=
 
 # Brevo (plan: Email layer) -- sendEmail() helper.
+# SENDER must be a verified sender/domain in your Brevo account, or every
+# send fails. NOTIFY is the business inbox that receives enquiry-form leads.
+# Both left empty on purpose (fail-open -- see lib/brevo.ts) until you fill
+# them in; the enquiry form works end-to-end without them, it just skips
+# the notification email.
 BREVO_API_KEY=
+BREVO_SENDER_EMAIL=
+BREVO_NOTIFY_EMAIL=
 
 # Cloudflare Turnstile (plan §11) -- SECRET key for server-side verification.
 # The site key is public and goes in .env.local instead (see .env.local.example).

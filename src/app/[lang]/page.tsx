@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import { listTours, getTourRates } from "@/lib/queries/tours";
 import { listCampZones, getMinCampRate } from "@/lib/queries/camping";
 import { listPublishedReviews, listTourReviewStats } from "@/lib/queries/reviews";
+import { SITE_URL, BUSINESS_NAME } from "@/lib/site";
+import { serializeJsonLd, buildOrganizationJsonLd, buildProductsJsonLd, buildFaqJsonLd } from "@/lib/jsonld";
 import { Hero } from "@/components/public/Hero";
 import { TrustBar } from "@/components/public/TrustBar";
 import { Tours, type TourCard } from "@/components/public/Tours";
@@ -9,6 +12,7 @@ import { WhyUs } from "@/components/public/WhyUs";
 import { Reviews, type ReviewCard } from "@/components/public/Reviews";
 import { Gallery } from "@/components/public/Gallery";
 import { FAQ } from "@/components/public/FAQ";
+import { EnquirySection } from "@/components/public/EnquirySection";
 import { FinalCTA } from "@/components/public/FinalCTA";
 import { StickyBar } from "@/components/public/StickyBar";
 
@@ -16,6 +20,36 @@ import { StickyBar } from "@/components/public/StickyBar";
 // available during the static build-time prerender that generateStaticParams
 // (layout.tsx) would otherwise trigger for the "en" params entry.
 export const dynamic = "force-dynamic";
+
+const DESCRIPTION =
+  "White-water rafting, ziplines and ATV adventures through the wild heart of Phang Nga -- run by the pros who've done it safely for 20+ years.";
+
+export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
+  const { lang } = await params;
+  const canonical = `${SITE_URL}/${lang}`;
+  const heroImage = "https://res.cloudinary.com/daxyt9sso/image/upload/f_auto,q_auto,w_1200/au7evtgufphh8vmfyaor";
+
+  return {
+    title: `${BUSINESS_NAME} -- Rafting, Ziplines & ATV in Phang Nga`,
+    description: DESCRIPTION,
+    alternates: { canonical },
+    openGraph: {
+      title: BUSINESS_NAME,
+      description: DESCRIPTION,
+      url: canonical,
+      siteName: BUSINESS_NAME,
+      images: [{ url: heroImage, width: 1200, height: 630 }],
+      locale: lang,
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: BUSINESS_NAME,
+      description: DESCRIPTION,
+      images: [heroImage],
+    },
+  };
+}
 
 // Primary rafting tiers shown on the Landing page grid, matching the
 // prototype's 3-card layout; the "Extended Run" (7.5 km) variants are
@@ -28,7 +62,8 @@ function fromPrice(rates: { price: number }[]): number {
   return positive.length ? Math.min(...positive) : 0;
 }
 
-export default async function LandingPage() {
+export default async function LandingPage({ params }: { params: Promise<{ lang: string }> }) {
+  const { lang } = await params;
   const [allTours, campZones, reviews, tourReviewStats] = await Promise.all([
     listTours(),
     listCampZones(),
@@ -86,8 +121,13 @@ export default async function LandingPage() {
 
   const stickyFromPrice = Math.min(...tourCards.map((t) => t.fromPrice).filter((p) => p > 0), minCampRate ?? Infinity);
 
+  const jsonLd = [buildOrganizationJsonLd(), ...buildProductsJsonLd(tourCards), buildFaqJsonLd()];
+
   return (
     <>
+      {jsonLd.map((entry, i) => (
+        <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(entry) }} />
+      ))}
       <Hero tours={bookingTours} />
       <TrustBar />
       <Tours tours={tourCards} camping={camping} />
@@ -96,6 +136,7 @@ export default async function LandingPage() {
       <Reviews reviews={reviewCards} />
       <Gallery />
       <FAQ />
+      <EnquirySection locale={lang} />
       <FinalCTA />
       <StickyBar fromPrice={Number.isFinite(stickyFromPrice) ? stickyFromPrice : 0} />
     </>

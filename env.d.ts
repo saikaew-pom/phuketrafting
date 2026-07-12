@@ -17,6 +17,8 @@ declare global {
     TWILIO_AUTH_TOKEN?: string;
     TWILIO_WHATSAPP_NUMBER?: string;
     BREVO_API_KEY?: string;
+    BREVO_SENDER_EMAIL?: string;
+    BREVO_NOTIFY_EMAIL?: string;
     TURNSTILE_SECRET_KEY?: string;
     SENTRY_DSN?: string;
   }
