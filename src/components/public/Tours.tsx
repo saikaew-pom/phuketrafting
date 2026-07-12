@@ -39,7 +39,16 @@ export function Tours({ tours, camping }: { tours: TourCard[]; camping: CampingT
                 {tour.coverImageId && (
                   <Image src={tour.coverImageId} alt={tour.name} fill sizes="(max-width: 768px) 100vw, 33vw" />
                 )}
-                {tour.badge && <span className={"pr-badge pr-badge-" + tour.id}>{tour.badge}</span>}
+                {/* CSS defines .pr-badge-b1/-b2/-b3 (globals.css), not
+                    .pr-badge-tour-b1 -- tour.id is the full "tour-b1" row id,
+                    so strip the "tour-" prefix or the badge silently renders
+                    with no background (white text on transparent, invisible
+                    against a photo). Confirmed live: without this, all 3
+                    tour badges (Bestseller/Most Popular/Best Value) show as
+                    blank pills with unreadable text. */}
+                {tour.badge && (
+                  <span className={"pr-badge pr-badge-" + tour.id.replace(/^tour-/, "")}>{tour.badge}</span>
+                )}
                 {tour.avgRating != null && (
                   <span className="pr-tcard-rating">
                     <Star size={13} className="pr-ico pr-star-on" /> {tour.avgRating.toFixed(1)}

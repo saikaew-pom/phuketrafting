@@ -37,7 +37,7 @@ export default async function LangLayout({
   if (!isSupportedLocale(lang)) notFound();
 
   return (
-    <div className={`${sora.variable} ${plusJakartaSans.variable}`}>
+    <div className={`pr-app ${sora.variable} ${plusJakartaSans.variable}`}>
       <Analytics />
       <Nav />
       {children}

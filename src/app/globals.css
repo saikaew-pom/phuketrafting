@@ -11,14 +11,41 @@
   --accent-soft: #fff1e9;
   --green: #0a7d4d;
   --green-soft: #e7f5ee;
-  --font-head: var(--font-sora), sans-serif;
-  --font-body: var(--font-plus-jakarta-sans), sans-serif;
   --radius: 18px;
   --radius-sm: 12px;
   --shadow-sm: 0 1px 2px rgba(20, 25, 28, 0.06), 0 2px 8px rgba(20, 25, 28, 0.05);
   --shadow: 0 12px 32px -12px rgba(20, 25, 28, 0.18), 0 4px 12px -6px rgba(20, 25, 28, 0.1);
   --shadow-lg: 0 30px 70px -24px rgba(20, 25, 28, 0.32);
   --wrap: 1200px;
+}
+/*
+ * --font-head/--font-body live here, NOT in :root, because they reference
+ * --font-sora/--font-plus-jakarta-sans -- CSS custom properties next/font
+ * only defines via a class on [lang]/layout.tsx's wrapper div, a descendant
+ * of :root (the <html> element). A custom property's var() references are
+ * resolved using values visible AT ITS OWN declaration site, not wherever
+ * it's later used -- so a --font-head declared at :root, where --font-sora
+ * doesn't exist yet, permanently computes to the CSS guaranteed-invalid
+ * value there and INHERITS that broken value down to every descendant,
+ * including the wrapper div where --font-sora finally becomes defined.
+ * Real-world effect: every page silently rendered in the browser's default
+ * serif font instead of Sora/Plus Jakarta Sans -- confirmed live on the
+ * deployed site (computed font-family was "Times" sitewide) before this
+ * fix. Declaring --font-head/--font-body on .pr-app instead means they see
+ * --font-sora/--font-plus-jakarta-sans on the SAME element that defines
+ * them, so the reference resolves correctly and inherits down intact.
+ *
+ * The base `font-family: var(--font-body)` rule itself has to move here too
+ * (off the literal `body` selector, onto `.pr-app`) for the same reason:
+ * `body` is an ANCESTOR of `.pr-app`, not a descendant, so it still can't
+ * see `--font-body` even after the fix above -- every other `body` property
+ * below (background/color/font-size/line-height) is untouched since those
+ * don't depend on a next/font variable and were never broken.
+ */
+.pr-app {
+  --font-head: var(--font-sora), sans-serif;
+  --font-body: var(--font-plus-jakarta-sans), sans-serif;
+  font-family: var(--font-body);
 }
 * {
   box-sizing: border-box;
@@ -31,7 +58,6 @@ html {
 body {
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--font-body);
   font-size: 17px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
@@ -1265,6 +1291,14 @@ select.pr-input {
 .pr-footer-base {
   border-top: 1px solid rgba(255, 255, 255, 0.12);
   padding: 22px 28px;
+  /* Extra bottom padding clears StickyBar.tsx's fixed "From <price> / Book
+     now" bar (~72px tall, shown at any viewport width once scrollY > 600 --
+     not mobile-only despite the "sticky mobile bar" comment on .pr-sticky
+     below). Without this, the fixed bar permanently covers this row --
+     confirmed live: the Privacy/Terms/Waiver links were unreachable by
+     scrolling, at any viewport size, since scrollY maxes out at the
+     document's natural height with no room left to scroll them clear. */
+  padding-bottom: calc(22px + 72px + env(safe-area-inset-bottom, 0px));
   max-width: var(--wrap);
   margin: 0 auto;
   display: flex;
