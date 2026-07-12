@@ -102,17 +102,33 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
 
   const db = getDb();
   const session = await db
-    .prepare("SELECT date FROM tour_sessions WHERE id = ?1")
+    .prepare("SELECT date, tour_id FROM tour_sessions WHERE id = ?1")
     .bind(input.tourSessionId)
-    .first<{ date: string }>();
+    .first<{ date: string; tour_id: string }>();
   if (!session) return { success: false, reason: "not_found" };
+
+  // input.tourId is client-supplied and, on its own, is just a claim -- the
+  // session row (found via tourSessionId, the real trust anchor: an ID for
+  // a specific date/capacity slot that already exists in D1) is the only
+  // authoritative source of which tour this booking actually prices against.
+  // Without this check, a client could name a real, open tourSessionId on an
+  // expensive tour while passing a different (cheaper) tourId: the capacity
+  // claim below still correctly consumes the real session's seat, but
+  // calculateTourPrice would price the booking off the WRONG tour's
+  // tour_rates -- a booking priced below cost that also consumes real
+  // inventory it never paid for. Reject rather than silently correct, same
+  // "fail loudly on a bad input, don't guess" stance as pricing.ts's own
+  // missing-rate-band guards.
+  if (session.tour_id !== input.tourId) return { success: false, reason: "invalid_input" };
 
   const today = new Date().toISOString().slice(0, 10);
 
   // Price BEFORE claiming capacity -- a bad tour/promo config should fail
-  // fast without ever touching the session's booked_count.
+  // fast without ever touching the session's booked_count. Pricing uses
+  // session.tour_id (proven == input.tourId above, but this is the
+  // authoritative value, not the client-supplied one) as the tourId of record.
   const price = await calculateTourPrice({
-    tourId: input.tourId,
+    tourId: session.tour_id,
     date: session.date,
     bookingDate: today,
     adults: input.adults,
@@ -238,13 +254,30 @@ export async function createCampBooking(input: CreateCampBookingInput): Promise<
     return { success: false, reason: "invalid_input" };
   }
 
+  // Same trust-boundary check as createTourBooking's session.tour_id guard
+  // above, and the same underlying bug shape: campUnitId is the real trust
+  // anchor (an ID for a specific, existing unit), and zoneId is only a
+  // client-supplied claim about which zone -- and therefore which
+  // camp_rates row -- to price against. Without this, a client could name a
+  // real campUnitId in an expensive zone while passing a cheaper zoneId, and
+  // calculateCampPrice below would price off the wrong zone's camp_rates
+  // while claimCampUnitBooking still consumes the real unit's availability.
+  const unit = await getDb()
+    .prepare("SELECT zone_id FROM camp_units WHERE id = ?1")
+    .bind(input.campUnitId)
+    .first<{ zone_id: string }>();
+  if (!unit) return { success: false, reason: "not_found" };
+  if (unit.zone_id !== input.zoneId) return { success: false, reason: "invalid_input" };
+
   const today = new Date().toISOString().slice(0, 10);
 
   // Price BEFORE claiming -- calculateCampPrice throws on a bad
   // zone/stayType/date combination (pricing.ts's own guards), which we let
   // propagate rather than claiming a unit for a booking that can't be priced.
+  // Uses unit.zone_id (proven == input.zoneId above, but authoritative) as
+  // the zone of record, same reasoning as createTourBooking's session.tour_id.
   const price = await calculateCampPrice({
-    zoneId: input.zoneId,
+    zoneId: unit.zone_id,
     stayType: input.stayType,
     checkIn: input.checkIn,
     checkOut: input.checkOut,
