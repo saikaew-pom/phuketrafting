@@ -130,7 +130,13 @@ export async function submitTourBooking(_prevState: BookingFormState, formData: 
       tourSessionId: formData.get("tour_session_id"),
       tourId: formData.get("tour_id"),
       adults: formData.get("adults"),
-      children: formData.get("children"),
+      // Read from "children_count", not "children" -- see BookingWidget.tsx's
+      // comment on its hidden input: a field literally named "children"
+      // shadows the DOM's inherited Element.children property on the <form>
+      // element (form.children returns this input instead of the real
+      // HTMLCollection). FormData itself isn't affected, but the field is
+      // named children_count here to keep the wire name matching the widget.
+      children: formData.get("children_count"),
       infants: formData.get("infants"),
       guestName: formData.get("guest_name"),
       // FormData.get() returns null (not undefined) for a key that's

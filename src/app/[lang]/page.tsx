@@ -137,7 +137,7 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
       {jsonLd.map((entry, i) => (
         <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(entry) }} />
       ))}
-      <Hero tours={bookingTours} />
+      <Hero tours={bookingTours} locale={lang} />
       <TrustBar />
       <Tours tours={tourCards} camping={camping} />
       <HowItWorks />
