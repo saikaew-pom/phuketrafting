@@ -1,0 +1,103 @@
+import { listTours, getTourRates } from "@/lib/queries/tours";
+import { listCampZones, getMinCampRate } from "@/lib/queries/camping";
+import { listPublishedReviews, listTourReviewStats } from "@/lib/queries/reviews";
+import { Hero } from "@/components/public/Hero";
+import { TrustBar } from "@/components/public/TrustBar";
+import { Tours, type TourCard } from "@/components/public/Tours";
+import { HowItWorks } from "@/components/public/HowItWorks";
+import { WhyUs } from "@/components/public/WhyUs";
+import { Reviews, type ReviewCard } from "@/components/public/Reviews";
+import { Gallery } from "@/components/public/Gallery";
+import { FAQ } from "@/components/public/FAQ";
+import { FinalCTA } from "@/components/public/FinalCTA";
+import { StickyBar } from "@/components/public/StickyBar";
+
+// D1 reads happen at request time via getCloudflareContext(), which isn't
+// available during the static build-time prerender that generateStaticParams
+// (layout.tsx) would otherwise trigger for the "en" params entry.
+export const dynamic = "force-dynamic";
+
+// Primary rafting tiers shown on the Landing page grid, matching the
+// prototype's 3-card layout; the "Extended Run" (7.5 km) variants are
+// deliberately not surfaced here yet -- they belong on a future dedicated
+// Tour Packages comparison page (see BUILD_AND_DEPLOY_PLAN.md Phase 3 scope).
+const PRIMARY_TOUR_IDS = ["tour-b1", "tour-b2", "tour-b3"];
+
+function fromPrice(rates: { price: number }[]): number {
+  const positive = rates.map((r) => r.price).filter((p) => p > 0);
+  return positive.length ? Math.min(...positive) : 0;
+}
+
+export default async function LandingPage() {
+  const [allTours, campZones, reviews, tourReviewStats] = await Promise.all([
+    listTours(),
+    listCampZones(),
+    listPublishedReviews(),
+    listTourReviewStats(),
+  ]);
+
+  // listTours()/listCampZones() return every row, active or not (the
+  // dashboard listing needs inactive rows too, to let staff re-enable them)
+  // -- the public Landing page must filter to is_active itself.
+  const primaryTours = PRIMARY_TOUR_IDS.map((id) => allTours.find((t) => t.id === id)).filter(
+    (t): t is NonNullable<typeof t> => t != null && t.is_active === 1
+  );
+
+  const ratesByTour = await Promise.all(primaryTours.map((t) => getTourRates(t.id)));
+  const reviewStatsByTour = new Map(tourReviewStats.map((s) => [s.tour_id, s]));
+
+  const tourCards: TourCard[] = primaryTours.map((tour, i) => {
+    const stats = reviewStatsByTour.get(tour.id);
+    return {
+      id: tour.id,
+      name: tour.name,
+      tagline: tour.tagline,
+      coverImageId: tour.cover_image_id,
+      fromPrice: fromPrice(ratesByTour[i]),
+      durationLabel: tour.duration_label,
+      groupLabel: tour.min_group != null && tour.max_group != null ? `${tour.min_group}–${tour.max_group} guests` : null,
+      badge: tour.badge,
+      highlights: JSON.parse(tour.includes) as string[],
+      avgRating: stats?.avg_rating ?? null,
+      reviewCount: stats?.review_count ?? null,
+    };
+  });
+
+  const bookingTours = tourCards.map((t) => ({ id: t.id, name: t.name, fromPrice: t.fromPrice }));
+
+  // No "?? campZones[0]" fallback: if every zone is inactive, staff have
+  // deliberately switched camping off (same "Active (visible on site)"
+  // toggle used for tours) -- showing a hidden zone's photo/price anyway
+  // would contradict that.
+  const teaserZone = campZones.find((z) => z.is_active) ?? null;
+  const minCampRate = teaserZone ? await getMinCampRate(teaserZone.id) : null;
+  const camping =
+    teaserZone && minCampRate != null ? { fromPrice: minCampRate, coverImageId: teaserZone.cover_image_id } : null;
+
+  const tourNameById = new Map(allTours.map((t) => [t.id, t.name]));
+  const reviewCards: ReviewCard[] = reviews.map((r) => ({
+    id: r.id,
+    guestName: r.guest_name,
+    guestPlace: r.guest_place,
+    rating: r.rating,
+    content: r.content,
+    tourName: r.tour_id ? (tourNameById.get(r.tour_id) ?? null) : "Riverside Camping",
+  }));
+
+  const stickyFromPrice = Math.min(...tourCards.map((t) => t.fromPrice).filter((p) => p > 0), minCampRate ?? Infinity);
+
+  return (
+    <>
+      <Hero tours={bookingTours} />
+      <TrustBar />
+      <Tours tours={tourCards} camping={camping} />
+      <HowItWorks />
+      <WhyUs />
+      <Reviews reviews={reviewCards} />
+      <Gallery />
+      <FAQ />
+      <FinalCTA />
+      <StickyBar fromPrice={Number.isFinite(stickyFromPrice) ? stickyFromPrice : 0} />
+    </>
+  );
+}

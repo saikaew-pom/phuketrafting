@@ -1,32 +1,39 @@
-import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { getDevBypassIdentity, verifyAccessHeaders } from "@/lib/access";
-import { getDb } from "@/lib/db";
+import { requireStaff, type StaffIdentity } from "@/lib/access";
 
-interface StaffRow {
-  email: string;
-  name: string;
-  role: string;
-  active: number;
-}
+// requireStaff() calls next/headers' headers() indirectly (inside
+// src/lib/access.ts), not directly in this component body. Next 16's
+// Turbopack build didn't detect that transitively and tried to statically
+// prerender /dashboard/products/camping at build time, where
+// getCloudflareContext() isn't available (same class of failure as
+// src/app/[lang]/page.tsx -- see its comment). Force dynamic explicitly
+// rather than relying on Dynamic API auto-detection through a helper.
+export const dynamic = "force-dynamic";
 
-// middleware.ts already blocked unauthenticated requests to /dashboard/*.
-// This layout re-derives identity (cheap — JWKS is isolate-cached) rather
-// than trusting a forwarded header, then looks up the role: Access confirms
-// *who*, this table is the only source of truth for *what they can do*.
+// Next.js 16's proxy.ts defaults to the Node.js runtime with no way to opt
+// into Edge (see node_modules/next/dist/docs/.../proxy.md, "Runtime"
+// section), and @opennextjs/cloudflare hard-fails the build on Node.js
+// middleware -- so there is no proxy/middleware file gating /dashboard at
+// the edge. This layout gates *rendering* the dashboard UI: it verifies the
+// Cloudflare Access JWT itself (cheap -- JWKS is isolate-cached) and fails
+// closed on any error (including a D1 lookup failure, since requireStaff()
+// covers both) -- Access confirms *who*, the staff table is the only source
+// of truth for *what they can do*.
+//
+// This does NOT protect the Server Actions rendered inside these pages --
+// Next.js does not run a route's layout before invoking a bound Server
+// Action, so saveTour/saveCampZone (and any future mutation) must call
+// requireStaff() themselves too. See requireStaff()'s doc comment in
+// src/lib/access.ts.
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const requestHeaders = await headers();
-  const bypass = getDevBypassIdentity(requestHeaders.get("host"));
-  const identity = bypass ?? (await verifyAccessHeaders(requestHeaders));
-
-  const staff = await getDb()
-    .prepare("SELECT email, name, role, active FROM staff WHERE email = ?1")
-    .bind(identity.email)
-    .first<StaffRow>();
-
-  if (!staff || !staff.active) {
-    // A real, Access-authenticated email that isn't (yet) in the staff
-    // table — Access and the role table can drift; fail closed.
+  let staff: StaffIdentity;
+  try {
+    staff = await requireStaff();
+  } catch {
+    // Covers: missing/invalid Access JWT, an Access-authenticated email
+    // that isn't (yet) in the staff table (Access and the role table can
+    // drift), an inactive staff row, or the D1 lookup itself throwing --
+    // all fail closed to the same 404 rather than leaking which case hit.
     notFound();
   }
 

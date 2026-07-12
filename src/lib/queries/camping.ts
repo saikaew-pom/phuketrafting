@@ -43,6 +43,20 @@ export async function getCampRates(zoneId: string): Promise<CampRate[]> {
   return results;
 }
 
+/**
+ * Cheapest active nightly rate for one zone -- used for the Landing page
+ * camping teaser. Scoped to a single zone id (not a global MIN across all
+ * zones) so the "from" price shown always matches the zone whose photo and
+ * name the teaser card actually displays.
+ */
+export async function getMinCampRate(zoneId: string): Promise<number | null> {
+  const row = await getDb()
+    .prepare("SELECT MIN(price_weekday) AS min_price FROM camp_rates WHERE zone_id = ?1 AND is_active = 1")
+    .bind(zoneId)
+    .first<{ min_price: number | null }>();
+  return row?.min_price ?? null;
+}
+
 export interface CampZoneUpdate {
   name: string;
   tagline: string;

@@ -2,8 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { updateCampZone, updateCampRatePrices } from "@/lib/queries/camping";
+import { requireStaff } from "@/lib/access";
 
 export async function saveCampZone(zoneId: string, formData: FormData) {
+  // Server Actions are reachable via direct POST regardless of whether the
+  // dashboard layout ever rendered for this caller -- re-verify here. See
+  // requireStaff()'s doc comment in src/lib/access.ts for why this can't be
+  // left to the layout alone.
+  await requireStaff();
+
   const name = String(formData.get("name") ?? "").trim();
   if (!name) {
     throw new Error("Name is required");

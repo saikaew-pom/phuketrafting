@@ -1,5 +1,7 @@
+import { headers } from "next/headers";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { getDb } from "@/lib/db";
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 let jwksTeamDomain: string | null = null;
@@ -96,4 +98,50 @@ export function getDevBypassIdentity(hostHeader: string | null): AccessIdentity 
   const { env } = getCloudflareContext();
   if (env.DEV_AUTH_BYPASS !== "true") return null;
   return { email: "dev-admin@localhost" };
+}
+
+interface StaffRow {
+  email: string;
+  name: string;
+  role: string;
+  active: number;
+}
+
+export interface StaffIdentity {
+  email: string;
+  name: string;
+  role: string;
+}
+
+/**
+ * The one gate every /dashboard mutation must call before touching D1.
+ *
+ * dashboard/layout.tsx's auth check protects *rendering* the dashboard UI,
+ * but Next.js does not run a route's layout before invoking a Server Action
+ * bound to it -- Server Actions are independently reachable via direct POST
+ * requests to their (non-secret, HTML-embedded for progressive enhancement)
+ * action id. Confirmed by hand: with proxy.ts/middleware.ts removed, POSTing
+ * directly to a tour edit action with no Cf-Access-Jwt-Assertion header and
+ * a non-localhost Host header still wrote to D1, even though GETting the
+ * same page correctly 404s. See node_modules/next/dist/docs/01-app/02-guides/
+ * data-security.md ("Authentication and authorization" / "Server Actions"):
+ * "A page-level authentication check does not extend to the Server Actions
+ * defined within it. Always re-verify inside the action."
+ *
+ * Throws (fails closed) if the caller isn't a verified, active staff member.
+ */
+export async function requireStaff(): Promise<StaffIdentity> {
+  const requestHeaders = await headers();
+  const bypass = getDevBypassIdentity(requestHeaders.get("host"));
+  const identity = bypass ?? (await verifyAccessHeaders(requestHeaders));
+
+  const staff = await getDb()
+    .prepare("SELECT email, name, role, active FROM staff WHERE email = ?1")
+    .bind(identity.email)
+    .first<StaffRow>();
+
+  if (!staff || !staff.active) {
+    throw new Error("Unauthorized");
+  }
+  return { email: staff.email, name: staff.name, role: staff.role };
 }
