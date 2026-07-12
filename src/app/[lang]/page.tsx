@@ -3,6 +3,7 @@ import { listTours, getTourRates } from "@/lib/queries/tours";
 import { listCampZones, getMinCampRate } from "@/lib/queries/camping";
 import { listPublishedReviews, listTourReviewStats } from "@/lib/queries/reviews";
 import { SITE_URL, BUSINESS_NAME } from "@/lib/site";
+import { SUPPORTED_LOCALES, DEFAULT_LOCALE } from "@/lib/i18n";
 import { serializeJsonLd, buildOrganizationJsonLd, buildProductsJsonLd, buildFaqJsonLd } from "@/lib/jsonld";
 import { Hero } from "@/components/public/Hero";
 import { TrustBar } from "@/components/public/TrustBar";
@@ -29,10 +30,18 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
   const canonical = `${SITE_URL}/${lang}`;
   const heroImage = "https://res.cloudinary.com/daxyt9sso/image/upload/f_auto,q_auto,w_1200/au7evtgufphh8vmfyaor";
 
+  // Reciprocal hreflang: every locale variant points at every other, plus
+  // an x-default fallback. All four locales render today (identical EN
+  // copy on TH/ZH/RU until real translations land -- see [lang]/layout.tsx),
+  // so this is honest: the URLs really do resolve, even if not yet in the
+  // visitor's language.
+  const languages = Object.fromEntries(SUPPORTED_LOCALES.map((locale) => [locale, `${SITE_URL}/${locale}`]));
+  languages["x-default"] = `${SITE_URL}/${DEFAULT_LOCALE}`;
+
   return {
     title: `${BUSINESS_NAME} -- Rafting, Ziplines & ATV in Phang Nga`,
     description: DESCRIPTION,
-    alternates: { canonical },
+    alternates: { canonical, languages },
     openGraph: {
       title: BUSINESS_NAME,
       description: DESCRIPTION,

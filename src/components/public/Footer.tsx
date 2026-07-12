@@ -1,8 +1,9 @@
+import Link from "next/link";
 import { MessageCircle, MapPin, Clock } from "lucide-react";
 import { waLink } from "@/lib/whatsapp";
 import { listTours } from "@/lib/queries/tours";
 
-export async function Footer() {
+export async function Footer({ locale }: { locale: string }) {
   const tours = await listTours();
 
   return (
@@ -54,6 +55,11 @@ export async function Footer() {
       </div>
       <div className="pr-footer-base">
         <span>&copy; 2026 Phuket Rafting &middot; Le Rafting, Phang Nga</span>
+        <span className="pr-footer-legal">
+          <Link href={`/${locale}/privacy`}>Privacy</Link>
+          <Link href={`/${locale}/terms`}>Terms</Link>
+          <Link href={`/${locale}/waiver`}>Waiver</Link>
+        </span>
         <span>Rated 4.9&#9733; by 1,200+ travelers</span>
       </div>
     </footer>

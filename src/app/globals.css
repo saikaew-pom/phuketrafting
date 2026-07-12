@@ -1274,6 +1274,16 @@ select.pr-input {
   font-size: 13.5px;
   color: rgba(255, 255, 255, 0.5);
 }
+.pr-footer-legal {
+  display: flex;
+  gap: 16px;
+}
+.pr-footer-legal a {
+  color: rgba(255, 255, 255, 0.5);
+}
+.pr-footer-legal a:hover {
+  color: #fff;
+}
 
 /* ---- modal ---- */
 .pr-modal-overlay {
@@ -1655,5 +1665,77 @@ select.pr-input {
   .pr-hero-actions {
     flex-direction: column;
     align-items: stretch;
+  }
+}
+
+/* ---- legal pages (privacy / terms / waiver) ---- */
+.pr-legal {
+  padding: 140px 0 96px;
+}
+.pr-legal h1 {
+  font-family: var(--font-head);
+  font-size: clamp(30px, 4vw, 42px);
+  font-weight: 700;
+  line-height: 1.15;
+  margin-bottom: 8px;
+}
+.pr-legal-updated {
+  color: var(--ink-3);
+  font-size: 14.5px;
+  margin-bottom: 32px;
+}
+.pr-legal h2 {
+  font-family: var(--font-head);
+  font-size: 21px;
+  font-weight: 700;
+  margin: 40px 0 12px;
+}
+.pr-legal p,
+.pr-legal li {
+  color: var(--ink-2);
+  font-size: 16px;
+  line-height: 1.7;
+}
+.pr-legal p {
+  margin-bottom: 16px;
+}
+.pr-legal ul {
+  margin: 0 0 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pr-legal a {
+  color: var(--accent);
+  font-weight: 600;
+}
+.pr-legal-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0 24px;
+  font-size: 14.5px;
+}
+.pr-legal-table th,
+.pr-legal-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  vertical-align: top;
+}
+.pr-legal-table th {
+  background: var(--bg-tint);
+  font-family: var(--font-head);
+  font-weight: 700;
+}
+.pr-legal-table td {
+  color: var(--ink-2);
+}
+@media (max-width: 820px) {
+  .pr-legal {
+    padding: 108px 0 64px;
+  }
+  .pr-legal-table {
+    display: block;
+    overflow-x: auto;
   }
 }

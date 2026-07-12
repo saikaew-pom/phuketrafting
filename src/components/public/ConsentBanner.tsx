@@ -12,7 +12,7 @@ declare global {
 
 const STORAGE_KEY = "pr-cookie-consent";
 
-export function ConsentBanner() {
+export function ConsentBanner({ locale }: { locale: string }) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -44,7 +44,7 @@ export function ConsentBanner() {
       <p>
         We use cookies to understand how visitors use this site. Essential cookies (like bot protection) run
         regardless; analytics cookies only run with your consent. See our{" "}
-        <Link href="/privacy">Privacy Policy</Link>.
+        <Link href={`/${locale}/privacy`}>Privacy Policy</Link>.
       </p>
       <div className="pr-consent-actions">
         <button className="pr-btn pr-btn-accent" onClick={() => choose(true)}>

@@ -41,8 +41,8 @@ export default async function LangLayout({
       <Analytics />
       <Nav />
       {children}
-      <Footer />
-      <ConsentBanner />
+      <Footer locale={lang} />
+      <ConsentBanner locale={lang} />
     </div>
   );
 }
