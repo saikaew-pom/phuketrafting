@@ -230,6 +230,46 @@ export async function claimCampUnitBooking(params: {
   return { success: false, reason: "no_capacity" };
 }
 
+export interface AvailableCampUnit {
+  id: string;
+  name: string;
+  occupancy: number;
+}
+
+/**
+ * Camp units in one zone with no active (pending/confirmed) booking
+ * overlapping [checkIn, checkOut) -- feeds the camp booking widget's unit
+ * picker, same half-open-range overlap check as claimCampUnitBooking. This
+ * is a read used to populate a list, not a claim -- the actual booking still
+ * goes through claimCampUnitBooking's atomic guarded INSERT, so a unit shown
+ * here as available can still lose a race to a concurrent booking; the
+ * caller surfaces that via claimCampUnitBooking's own "no_capacity" reason.
+ */
+export async function listAvailableCampUnits(
+  zoneId: string,
+  checkIn: string,
+  checkOut: string
+): Promise<AvailableCampUnit[]> {
+  const { results } = await getDb()
+    .prepare(
+      `SELECT id, name, occupancy FROM camp_units u
+        WHERE u.zone_id = ?
+          AND u.is_active = 1
+          AND u.is_blocked = 0
+          AND NOT EXISTS (
+            SELECT 1 FROM bookings b
+             WHERE b.camp_unit_id = u.id
+               AND b.status IN (${ACTIVE_BOOKING_STATUSES.map(() => "?").join(",")})
+               AND b.check_in < ?
+               AND b.check_out > ?
+          )
+        ORDER BY u.occupancy, u.name`
+    )
+    .bind(zoneId, ...ACTIVE_BOOKING_STATUSES, checkOut, checkIn)
+    .all<AvailableCampUnit>();
+  return results;
+}
+
 export interface CampAvailabilityWindow {
   campUnitId: string;
   checkIn: string;

@@ -2,10 +2,19 @@ import Image from "next/image";
 import { ShieldCheck, ShowerHead, BadgeCheck, Zap, Play } from "lucide-react";
 import { Stars } from "@/components/public/Stars";
 import { BookingWidget, type BookingTourOption } from "@/components/public/BookingWidget";
+import type { PickupZone } from "@/lib/queries/pickup";
 
 const HERO_IMAGE_ID = "au7evtgufphh8vmfyaor";
 
-export function Hero({ tours, locale }: { tours: BookingTourOption[]; locale: string }) {
+export function Hero({
+  tours,
+  pickupZones,
+  locale,
+}: {
+  tours: BookingTourOption[];
+  pickupZones: PickupZone[];
+  locale: string;
+}) {
   return (
     <section className="pr-hero pr-hero-split" id="top">
       <div className="pr-hero-bg">
@@ -45,7 +54,7 @@ export function Hero({ tours, locale }: { tours: BookingTourOption[]; locale: st
           </div>
         </div>
         <div className="pr-hero-widget">
-          <BookingWidget tours={tours} locale={locale} />
+          <BookingWidget tours={tours} pickupZones={pickupZones} locale={locale} />
         </div>
       </div>
     </section>

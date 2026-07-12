@@ -1,5 +1,5 @@
 import { getDb } from "@/lib/db";
-import { claimTourSessionCapacity, claimCampUnitBooking } from "@/lib/scheduling";
+import { claimCampUnitBooking } from "@/lib/scheduling";
 import { calculateTourPrice, calculateCampPrice } from "@/lib/pricing";
 
 export type BookingSource = "web" | "chatbot" | "whatsapp" | "staff" | "ota" | "agent";
@@ -147,62 +147,84 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
   // Capacity counts adults+children only -- tour_rates.counts_toward_capacity=0
   // for the infant band is exactly this: infants ride along but don't
   // consume a seat.
-  const claim = await claimTourSessionCapacity(input.tourSessionId, input.adults + input.children);
-  if (!claim.success) return { success: false, reason: claim.reason };
-
+  const paxDelta = input.adults + input.children;
   const bookingId = crypto.randomUUID();
-  try {
-    await db
-      .prepare(
-        `INSERT INTO bookings (
-           id, type, tour_session_id, adults, children, infants, hotel,
-           pickup_zone_id, transfer_fee, addon_choice, subtotal,
-           discount_amount, total, guest_name, guest_email, guest_phone,
-           locale, source, booked_by_agent_id, promo_code_id, consent_marketing
-         ) VALUES (?1,'tour',?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)`
-      )
-      .bind(
-        bookingId,
-        input.tourSessionId,
-        input.adults,
-        input.children,
-        input.infants,
-        input.hotel,
-        input.pickupZoneId,
-        price.transferFee,
-        input.addonChoice,
-        price.subtotal,
-        price.discountAmount,
-        price.total,
-        input.guestName.trim(),
-        input.guestEmail,
-        input.guestPhone,
-        input.locale,
-        input.source,
-        input.bookedByAgentId,
-        promoCodeId,
-        input.consentMarketing ? 1 : 0
-      )
-      .run();
-  } catch (err) {
-    // Compensate: the capacity claim above succeeded but the booking row
-    // itself failed to write (constraint violation, transient D1 error) --
-    // without this, the session would show seats taken with no booking to
-    // account for them. D1 has no transactions to roll this back for us.
-    // The release is wrapped separately: if IT also throws (e.g. D1 is
-    // unreachable entirely), that must not mask the original insert
-    // failure -- log the compensation failure and still throw the
-    // original `err`, not whatever the release call threw.
-    try {
-      await claimTourSessionCapacity(input.tourSessionId, -(input.adults + input.children));
-    } catch (releaseErr) {
-      console.error(
-        `createTourBooking: capacity release failed after insert failure for session ${input.tourSessionId} -- ` +
-          `${input.adults + input.children} seat(s) may be leaked`,
-        releaseErr
-      );
-    }
-    throw err;
+
+  // The booking INSERT and the capacity UPDATE are sent as one db.batch()
+  // call -- D1 runs a batch as a single transaction, and since D1/SQLite
+  // serializes writers, no other write can interleave between these two
+  // statements. Both are guarded by the SAME condition
+  // (booked_count + paxDelta <= capacity - allotment_hold), and the INSERT
+  // runs first, so the UPDATE's guard reads the identical pre-claim state
+  // the INSERT's guard just read -- either both statements' guards pass
+  // (booking created AND capacity claimed) or both fail as no-ops (nothing
+  // written, nothing claimed). This replaces an earlier claim-then-insert
+  // sequence that needed a manual compensating release if the insert failed
+  // after the claim succeeded -- a real gap (flagged by code review) where a
+  // Worker eviction between the two separate calls could leak claimed
+  // capacity with no booking to account for it. A single db.batch() closes
+  // that gap entirely: there is no gap between two RPCs to be evicted in the
+  // middle of.
+  const insertStmt = db
+    .prepare(
+      `INSERT INTO bookings (
+         id, type, tour_session_id, adults, children, infants, hotel,
+         pickup_zone_id, transfer_fee, addon_choice, subtotal,
+         discount_amount, total, guest_name, guest_email, guest_phone,
+         locale, source, booked_by_agent_id, promo_code_id, consent_marketing
+       )
+       SELECT ?,'tour',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+        WHERE EXISTS (
+          SELECT 1 FROM tour_sessions
+           WHERE id = ? AND is_blocked = 0 AND booked_count + ? <= capacity - allotment_hold
+        )`
+    )
+    .bind(
+      bookingId,
+      input.tourSessionId,
+      input.adults,
+      input.children,
+      input.infants,
+      input.hotel,
+      input.pickupZoneId,
+      price.transferFee,
+      input.addonChoice,
+      price.subtotal,
+      price.discountAmount,
+      price.total,
+      input.guestName.trim(),
+      input.guestEmail,
+      input.guestPhone,
+      input.locale,
+      input.source,
+      input.bookedByAgentId,
+      promoCodeId,
+      input.consentMarketing ? 1 : 0,
+      input.tourSessionId,
+      paxDelta
+    );
+
+  const updateStmt = db
+    .prepare(
+      `UPDATE tour_sessions
+          SET booked_count = booked_count + ?, updated_at = unixepoch()
+        WHERE id = ? AND is_blocked = 0 AND booked_count + ? <= capacity - allotment_hold`
+    )
+    .bind(paxDelta, input.tourSessionId, paxDelta);
+
+  const [insertResult, updateResult] = await db.batch([insertStmt, updateStmt]);
+
+  if (insertResult.meta.changes === 0 || updateResult.meta.changes === 0) {
+    // Zero rows on both sides (see above -- they always agree) -- work out
+    // *why* for a better error message, same diagnostic-only read-after-write
+    // pattern as scheduling.ts's claim functions.
+    const current = await db
+      .prepare("SELECT is_blocked FROM tour_sessions WHERE id = ?1")
+      .bind(input.tourSessionId)
+      .first<{ is_blocked: number }>();
+    if (!current) return { success: false, reason: "not_found" };
+    if (current.is_blocked) return { success: false, reason: "blocked" };
+    return { success: false, reason: "no_capacity" };
   }
 
   await runPostCommitEffect(bookingId, "booking_logs", () =>

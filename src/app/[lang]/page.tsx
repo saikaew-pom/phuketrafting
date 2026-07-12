@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import { listTours, getTourRates } from "@/lib/queries/tours";
 import { listCampZones, getMinCampRate } from "@/lib/queries/camping";
 import { listPublishedReviews, listTourReviewStats } from "@/lib/queries/reviews";
+import { listPickupZones } from "@/lib/queries/pickup";
 import { SITE_URL, BUSINESS_NAME } from "@/lib/site";
 import { SUPPORTED_LOCALES, DEFAULT_LOCALE } from "@/lib/i18n";
 import { serializeJsonLd, buildOrganizationJsonLd, buildProductsJsonLd, buildFaqJsonLd } from "@/lib/jsonld";
 import { Hero } from "@/components/public/Hero";
 import { TrustBar } from "@/components/public/TrustBar";
 import { Tours, type TourCard } from "@/components/public/Tours";
+import { CampBookingSection } from "@/components/public/CampBookingSection";
 import { HowItWorks } from "@/components/public/HowItWorks";
 import { WhyUs } from "@/components/public/WhyUs";
 import { Reviews, type ReviewCard } from "@/components/public/Reviews";
@@ -73,11 +75,12 @@ function fromPrice(rates: { price: number }[]): number {
 
 export default async function LandingPage({ params }: { params: Promise<{ lang: string }> }) {
   const { lang } = await params;
-  const [allTours, campZones, reviews, tourReviewStats] = await Promise.all([
+  const [allTours, campZones, reviews, tourReviewStats, pickupZones] = await Promise.all([
     listTours(),
     listCampZones(),
     listPublishedReviews(),
     listTourReviewStats(),
+    listPickupZones(),
   ]);
 
   // listTours()/listCampZones() return every row, active or not (the
@@ -118,6 +121,8 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
   const camping =
     teaserZone && minCampRate != null ? { fromPrice: minCampRate, coverImageId: teaserZone.cover_image_id } : null;
 
+  const activeCampZones = campZones.filter((z) => z.is_active).map((z) => ({ id: z.id, name: z.name }));
+
   const tourNameById = new Map(allTours.map((t) => [t.id, t.name]));
   const reviewCards: ReviewCard[] = reviews.map((r) => ({
     id: r.id,
@@ -137,9 +142,10 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
       {jsonLd.map((entry, i) => (
         <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(entry) }} />
       ))}
-      <Hero tours={bookingTours} locale={lang} />
+      <Hero tours={bookingTours} pickupZones={pickupZones} locale={lang} />
       <TrustBar />
       <Tours tours={tourCards} camping={camping} />
+      {activeCampZones.length > 0 && <CampBookingSection zones={activeCampZones} locale={lang} />}
       <HowItWorks />
       <WhyUs />
       <Reviews reviews={reviewCards} />

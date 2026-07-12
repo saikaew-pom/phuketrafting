@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import Script from "next/script";
-import { Mountain, ChevronDown, Calendar, Minus, Plus, Zap, Check, Tag } from "lucide-react";
+import { Mountain, ChevronDown, Calendar, Minus, Plus, Zap, Check, Tag, MapPin, Sparkles } from "lucide-react";
 import { baht } from "@/lib/format";
 import {
   submitTourBooking,
@@ -12,6 +12,7 @@ import {
 } from "@/app/[lang]/booking-actions";
 import type { AvailableTourSession } from "@/lib/scheduling";
 import type { PriceBreakdown } from "@/lib/pricing";
+import type { PickupZone } from "@/lib/queries/pickup";
 
 declare global {
   interface Window {
@@ -42,13 +43,24 @@ function addDaysISO(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function BookingWidget({ tours, locale }: { tours: BookingTourOption[]; locale: string }) {
+export function BookingWidget({
+  tours,
+  pickupZones,
+  locale,
+}: {
+  tours: BookingTourOption[];
+  pickupZones: PickupZone[];
+  locale: string;
+}) {
   const [tourId, setTourId] = useState(tours[0]?.id ?? "");
   const [sessions, setSessions] = useState<AvailableTourSession[]>([]);
   const [sessionId, setSessionId] = useState("");
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(0);
   const [infants, setInfants] = useState(0);
+  const [pickupZoneId, setPickupZoneId] = useState("");
+  const [hotel, setHotel] = useState("");
+  const [addonChoice, setAddonChoice] = useState("");
   const [promoCode, setPromoCode] = useState("");
   const [guestName, setGuestName] = useState("");
   const [guestEmail, setGuestEmail] = useState("");
@@ -127,7 +139,7 @@ export function BookingWidget({ tours, locale }: { tours: BookingTourOption[]; l
       adults,
       children,
       infants,
-      pickupZoneId: null,
+      pickupZoneId: pickupZoneId || null,
       promoCode: promoCode.trim() || null,
     })
       .then((result) => {
@@ -147,7 +159,7 @@ export function BookingWidget({ tours, locale }: { tours: BookingTourOption[]; l
         console.error("previewTourPrice failed", err);
         setPriceError("Unable to calculate price right now.");
       });
-  }, [tourId, sessionId, adults, children, infants, promoCode, sessions]);
+  }, [tourId, sessionId, adults, children, infants, pickupZoneId, promoCode, sessions]);
 
   // Turnstile tokens are single-use -- a rejected submission (bad Zod field,
   // an already-spent token) must reset the widget or every resubmission
@@ -178,10 +190,12 @@ export function BookingWidget({ tours, locale }: { tours: BookingTourOption[]; l
   // closes this regardless of which action outcome triggered the reset.
   const tourSelectRef = useRef<HTMLSelectElement>(null);
   const dateSelectRef = useRef<HTMLSelectElement>(null);
+  const pickupSelectRef = useRef<HTMLSelectElement>(null);
   useEffect(() => {
     if (tourSelectRef.current) tourSelectRef.current.value = tourId;
     if (dateSelectRef.current) dateSelectRef.current.value = sessionId;
-  }, [state, tourId, sessionId]);
+    if (pickupSelectRef.current) pickupSelectRef.current.value = pickupZoneId;
+  }, [state, tourId, sessionId, pickupZoneId]);
 
   const selectedSession = sessions.find((s) => s.id === sessionId) ?? null;
 
@@ -233,6 +247,9 @@ export function BookingWidget({ tours, locale }: { tours: BookingTourOption[]; l
               formData.get("children_count"). */}
           <input type="hidden" name="children_count" value={children} />
           <input type="hidden" name="infants" value={infants} />
+          <input type="hidden" name="pickup_zone_id" value={pickupZoneId} />
+          <input type="hidden" name="hotel" value={hotel} />
+          <input type="hidden" name="addon_choice" value={addonChoice} />
           <input type="hidden" name="promo_code" value={promoCode} />
 
           <label className="pr-field">
@@ -312,6 +329,58 @@ export function BookingWidget({ tours, locale }: { tours: BookingTourOption[]; l
               </div>
             </label>
           </div>
+
+          {pickupZones.length > 0 && (
+            <label className="pr-field">
+              <span className="pr-field-lbl">Pickup (optional)</span>
+              <div className="pr-select-wrap">
+                <MapPin size={17} className="pr-ico pr-field-ico" />
+                <select
+                  ref={pickupSelectRef}
+                  className="pr-input"
+                  value={pickupZoneId}
+                  onChange={(e) => setPickupZoneId(e.target.value)}
+                >
+                  <option value="">No pickup -- I&apos;ll make my own way there</option>
+                  {pickupZones.map((z) => (
+                    <option key={z.id} value={z.id}>
+                      {z.name} -- {z.fee > 0 ? `+${baht(z.fee)}` : "free"}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={16} className="pr-ico pr-select-chev" />
+              </div>
+            </label>
+          )}
+
+          {pickupZoneId && (
+            <label className="pr-field">
+              <span className="pr-field-lbl">Hotel name (for pickup)</span>
+              <input
+                className="pr-input"
+                type="text"
+                maxLength={200}
+                value={hotel}
+                onChange={(e) => setHotel(e.target.value)}
+                placeholder="e.g. Patong Beach Hotel"
+              />
+            </label>
+          )}
+
+          <label className="pr-field">
+            <span className="pr-field-lbl">Add-on (optional)</span>
+            <div className="pr-select-wrap">
+              <Sparkles size={17} className="pr-ico pr-field-ico" />
+              <input
+                className="pr-input"
+                type="text"
+                maxLength={60}
+                value={addonChoice}
+                onChange={(e) => setAddonChoice(e.target.value)}
+                placeholder="e.g. ATV combo, elephant sanctuary visit"
+              />
+            </div>
+          </label>
 
           <label className="pr-field">
             <span className="pr-field-lbl">Promo code (optional)</span>

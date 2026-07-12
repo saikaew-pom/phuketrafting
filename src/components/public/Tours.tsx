@@ -129,12 +129,7 @@ export function Tours({ tours, camping }: { tours: TourCard[]; camping: CampingT
                     <span className="pr-tcard-amt">{baht(camping.fromPrice)}</span>
                     <span className="pr-tcard-per">/ night</span>
                   </div>
-                  <a
-                    className="pr-btn pr-btn-accent"
-                    href={waLink("Hi! I'd like to book the Riverside Jungle Camping.")}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
+                  <a className="pr-btn pr-btn-accent" href="#camp-book">
                     Book
                     <ArrowRight size={16} className="pr-ico" />
                   </a>
