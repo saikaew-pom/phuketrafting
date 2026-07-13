@@ -10,7 +10,11 @@ export interface CreateBookingResult {
   reason?: "not_found" | "no_capacity" | "blocked" | "invalid_input";
 }
 
-async function logBookingEvent(bookingId: string, actor: string, action: string, details: unknown): Promise<void> {
+// Exported so admin actions (src/app/dashboard/bookings/actions.ts) can log
+// staff-initiated events (status changes, check-in, notes) with the same
+// append-only audit trail the public booking flows below already use --
+// actor is the real requireStaff().email for those callers, not "system".
+export async function logBookingEvent(bookingId: string, actor: string, action: string, details: unknown): Promise<void> {
   await getDb()
     .prepare("INSERT INTO booking_logs (booking_id, actor, action, details) VALUES (?1, ?2, ?3, ?4)")
     .bind(bookingId, actor, action, JSON.stringify(details))
