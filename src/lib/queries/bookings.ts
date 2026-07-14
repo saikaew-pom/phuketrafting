@@ -166,3 +166,131 @@ export async function updateBookingNotes(id: string, notes: string): Promise<boo
     .run();
   return result.meta.changes > 0;
 }
+
+const ACTIVE_STATUSES = ["pending", "confirmed"] as const;
+
+export interface DaySheetTourBooking {
+  id: string;
+  guest_name: string;
+  guest_phone: string | null;
+  adults: number;
+  children: number;
+  infants: number;
+  hotel: string | null;
+  checked_in: number;
+  waiver_acknowledged: number;
+  notes: string | null;
+  pickup_zone_name: string | null;
+}
+
+export interface DaySheetSession {
+  id: string;
+  tour_name: string;
+  start_time: string;
+  capacity: number;
+  booked_count: number;
+  allotment_hold: number;
+  bookings: DaySheetTourBooking[];
+}
+
+export interface DaySheetCampArrival {
+  id: string;
+  guest_name: string;
+  guest_phone: string | null;
+  adults: number;
+  children: number;
+  infants: number;
+  checked_in: number;
+  notes: string | null;
+  unit_name: string;
+  zone_name: string;
+  check_out: string;
+}
+
+export interface DaySheetCampDeparture {
+  id: string;
+  guest_name: string;
+  unit_name: string;
+  zone_name: string;
+}
+
+export interface DaySheet {
+  date: string;
+  sessions: DaySheetSession[];
+  campArrivals: DaySheetCampArrival[];
+  campDepartures: DaySheetCampDeparture[];
+}
+
+/**
+ * Everything staff need for one operating day: tour sessions running that
+ * day with their guest roster (pickup-zone sorted, per plan §2's "pickup
+ * list sorted by zone/time"), plus camp guests arriving or departing that
+ * day. Only `pending`/`confirmed` bookings show -- a cancelled or no-show
+ * booking has no seat/unit reserved and shouldn't appear on the manifest
+ * crew act on each morning.
+ */
+export async function getDaySheet(date: string): Promise<DaySheet> {
+  const db = getDb();
+  const activeIn = ACTIVE_STATUSES.map(() => "?").join(",");
+
+  const [sessionRows, bookingRows, campArrivalRows, campDepartureRows] = await Promise.all([
+    db
+      .prepare(
+        `SELECT ts.id, ts.start_time, ts.capacity, ts.booked_count, ts.allotment_hold, t.name AS tour_name
+           FROM tour_sessions ts
+           JOIN tours t ON ts.tour_id = t.id
+          WHERE ts.date = ?1 AND ts.is_blocked = 0
+          ORDER BY ts.start_time`
+      )
+      .bind(date)
+      .all<Omit<DaySheetSession, "bookings">>(),
+    db
+      .prepare(
+        `SELECT b.id, b.tour_session_id, b.guest_name, b.guest_phone, b.adults, b.children, b.infants,
+                b.hotel, b.checked_in, b.waiver_acknowledged, b.notes, pz.name AS pickup_zone_name
+           FROM bookings b
+           JOIN tour_sessions ts ON b.tour_session_id = ts.id
+           LEFT JOIN pickup_zones pz ON b.pickup_zone_id = pz.id
+          WHERE ts.date = ?1 AND b.status IN (${activeIn})
+          ORDER BY pz.sort_order, b.guest_name`
+      )
+      .bind(date, ...ACTIVE_STATUSES)
+      .all<DaySheetTourBooking & { tour_session_id: string }>(),
+    db
+      .prepare(
+        `SELECT b.id, b.guest_name, b.guest_phone, b.adults, b.children, b.infants, b.checked_in, b.notes,
+                cu.name AS unit_name, cz.name AS zone_name, b.check_out
+           FROM bookings b
+           JOIN camp_units cu ON b.camp_unit_id = cu.id
+           JOIN camp_zones cz ON cu.zone_id = cz.id
+          WHERE b.check_in = ?1 AND b.status IN (${activeIn})
+          ORDER BY cz.sort_order, cu.name`
+      )
+      .bind(date, ...ACTIVE_STATUSES)
+      .all<DaySheetCampArrival>(),
+    db
+      .prepare(
+        `SELECT b.id, b.guest_name, cu.name AS unit_name, cz.name AS zone_name
+           FROM bookings b
+           JOIN camp_units cu ON b.camp_unit_id = cu.id
+           JOIN camp_zones cz ON cu.zone_id = cz.id
+          WHERE b.check_out = ?1 AND b.status IN (${activeIn})
+          ORDER BY cz.sort_order, cu.name`
+      )
+      .bind(date, ...ACTIVE_STATUSES)
+      .all<DaySheetCampDeparture>(),
+  ]);
+
+  const bookingsBySession = new Map<string, DaySheetTourBooking[]>();
+  for (const { tour_session_id, ...booking } of bookingRows.results) {
+    if (!bookingsBySession.has(tour_session_id)) bookingsBySession.set(tour_session_id, []);
+    bookingsBySession.get(tour_session_id)!.push(booking);
+  }
+
+  return {
+    date,
+    sessions: sessionRows.results.map((s) => ({ ...s, bookings: bookingsBySession.get(s.id) ?? [] })),
+    campArrivals: campArrivalRows.results,
+    campDepartures: campDepartureRows.results,
+  };
+}
