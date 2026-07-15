@@ -1,6 +1,29 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { GOOGLE_REVIEW_URL } from "@/lib/site";
 
 const BREVO_SEND_URL = "https://api.brevo.com/v3/smtp/email";
+
+/**
+ * The Brevo-related bindings, however they were obtained.
+ *
+ * Every function here resolves its config through resolveBrevoConfig, which
+ * defaults to getCloudflareContext() -- correct for the Server Action callers
+ * (enquiry form, staff notify button), which always run inside a request.
+ * The cron callers (lib/cron/scheduled-notifications.ts) do NOT: OpenNext
+ * only populates the context's AsyncLocalStorage store during a fetch, so
+ * getCloudflareContext() throws in a scheduled() invocation. They pass `env`
+ * in explicitly instead. Optional param rather than a required one so the
+ * existing callers are untouched.
+ */
+export interface BrevoConfig {
+  BREVO_API_KEY?: string;
+  BREVO_SENDER_EMAIL?: string;
+  BREVO_NOTIFY_EMAIL?: string;
+}
+
+function resolveBrevoConfig(config?: BrevoConfig): BrevoConfig {
+  return config ?? getCloudflareContext().env;
+}
 
 interface EnquiryNotification {
   name: string;
@@ -22,8 +45,8 @@ interface EnquiryNotification {
  * configured yet -- lets the rest of the enquiry flow work end-to-end
  * before those business-specific addresses are set.
  */
-export async function sendEnquiryNotification(enquiry: EnquiryNotification): Promise<void> {
-  const { env } = getCloudflareContext();
+export async function sendEnquiryNotification(enquiry: EnquiryNotification, config?: BrevoConfig): Promise<void> {
+  const env = resolveBrevoConfig(config);
   const apiKey = env.BREVO_API_KEY;
   const senderEmail = env.BREVO_SENDER_EMAIL;
   const notifyEmail = env.BREVO_NOTIFY_EMAIL;
@@ -99,8 +122,8 @@ interface BookingReceivedEmail {
  * (Confirmed live: before this return value existed, a misconfigured Brevo
  * made every send look like a genuine success in the dashboard/audit log.)
  */
-export async function sendBookingReceivedEmail(booking: BookingReceivedEmail): Promise<boolean> {
-  const { env } = getCloudflareContext();
+export async function sendBookingReceivedEmail(booking: BookingReceivedEmail, config?: BrevoConfig): Promise<boolean> {
+  const env = resolveBrevoConfig(config);
   const apiKey = env.BREVO_API_KEY;
   const senderEmail = env.BREVO_SENDER_EMAIL;
 
@@ -159,8 +182,8 @@ interface ManageRequestNotification {
  * the booking's Activity log even if this email never arrives, so a Brevo
  * outage must never turn a real guest request into a lost one.
  */
-export async function sendManageRequestNotification(req: ManageRequestNotification): Promise<void> {
-  const { env } = getCloudflareContext();
+export async function sendManageRequestNotification(req: ManageRequestNotification, config?: BrevoConfig): Promise<void> {
+  const env = resolveBrevoConfig(config);
   const apiKey = env.BREVO_API_KEY;
   const senderEmail = env.BREVO_SENDER_EMAIL;
   const notifyEmail = env.BREVO_NOTIFY_EMAIL;
@@ -196,6 +219,118 @@ export async function sendManageRequestNotification(req: ManageRequestNotificati
   if (!response.ok) {
     throw new Error(`Brevo send failed: ${response.status}`);
   }
+}
+
+interface ScheduledGuestEmail {
+  guestName: string;
+  guestEmail: string;
+  productName: string;
+  date: string;
+  startTime: string | null;
+  pickupZoneName: string | null;
+  pickupEarliestTime: string | null;
+  hotel: string | null;
+  manageUrl: string | null;
+}
+
+/**
+ * T-1 pre-arrival pickup confirmation (plan §2's "T-1 day pickup-time
+ * confirmation via email"), sent by the daily cron, not a staff click.
+ *
+ * This is a deliberate, narrow exception to plan §2's "all guest
+ * notifications are explicit staff button-clicks" rule (see
+ * sendBookingReceivedEmail's comment). That rule exists so nothing ever tells
+ * a guest their booking is CONFIRMED without a human deciding it is -- and
+ * §2 itself carves out this automation in the same breath. Nothing here
+ * asserts confirmation: it restates details the guest already gave us and
+ * tells them where to reach us. Keep it that way.
+ *
+ * Returns false (no-op) when Brevo isn't configured, throws on a real send
+ * failure -- same contract as sendBookingReceivedEmail, so the caller can
+ * record 'not_configured' vs 'failed' vs 'sent' rather than a misleading
+ * uniform 'sent'.
+ */
+export async function sendPreArrivalEmail(booking: ScheduledGuestEmail, config?: BrevoConfig): Promise<boolean> {
+  const env = resolveBrevoConfig(config);
+  const apiKey = env.BREVO_API_KEY;
+  const senderEmail = env.BREVO_SENDER_EMAIL;
+  if (!apiKey || !senderEmail) return false;
+
+  // Pickup details are the whole point of this email, so be explicit when
+  // there AREN'T any -- a guest who chose "no pickup" reading a reminder that
+  // silently omits any mention of it could easily assume a van is coming.
+  const pickupBlock = booking.pickupZoneName
+    ? `<p><strong>Pickup:</strong> ${escapeHtml(booking.pickupZoneName)}${
+        booking.pickupEarliestTime ? ` from around ${escapeHtml(booking.pickupEarliestTime)}` : ""
+      }${booking.hotel ? `<br/><strong>Hotel:</strong> ${escapeHtml(booking.hotel)}` : ""}</p>
+       <p>Please be ready in your hotel lobby 10 minutes before that time. We'll call if there's any delay.</p>`
+    : `<p><strong>No pickup booked</strong> -- you're making your own way to us. Need a transfer after all? Just reply to this email or message us on WhatsApp.</p>`;
+
+  const html = `
+    <p>Hi ${escapeHtml(booking.guestName)},</p>
+    <p>See you tomorrow! Here are your details for <strong>${escapeHtml(booking.productName)}</strong> on
+       ${escapeHtml(booking.date)}${booking.startTime ? ` at ${escapeHtml(booking.startTime)}` : ""}.</p>
+    ${pickupBlock}
+    <p>Bring: swimwear, a change of clothes, sunscreen and a towel. We provide all safety gear, and there are
+       hot showers and lockers at the base.</p>
+    ${booking.manageUrl ? `<p><a href="${escapeHtml(booking.manageUrl)}">View your booking or sign your waivers</a></p>` : ""}
+    <p>Any questions, just reply to this email or message us on WhatsApp.</p>
+  `;
+
+  const response = await fetch(BREVO_SEND_URL, {
+    method: "POST",
+    headers: { "api-key": apiKey, "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({
+      sender: { email: senderEmail, name: "Phuket Rafting" },
+      to: [{ email: booking.guestEmail, name: booking.guestName }],
+      subject: `See you tomorrow -- ${booking.productName}`,
+      htmlContent: html,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Brevo send failed: ${response.status}`);
+  }
+  return true;
+}
+
+/**
+ * T+1 thank-you with a review link (plan §2's "T+1 day thank-you with
+ * Google-review link"). Same no-op/throw contract as above.
+ *
+ * GOOGLE_REVIEW_URL is still a placeholder (see lib/site.ts).
+ */
+export async function sendThankYouEmail(booking: ScheduledGuestEmail, config?: BrevoConfig): Promise<boolean> {
+  const env = resolveBrevoConfig(config);
+  const apiKey = env.BREVO_API_KEY;
+  const senderEmail = env.BREVO_SENDER_EMAIL;
+  if (!apiKey || !senderEmail) return false;
+
+  const html = `
+    <p>Hi ${escapeHtml(booking.guestName)},</p>
+    <p>Thanks for joining us for <strong>${escapeHtml(booking.productName)}</strong> -- we hope the river treated
+       you well.</p>
+    <p>If you enjoyed it, a quick review genuinely helps a small local operator like us:</p>
+    <p><a href="${escapeHtml(GOOGLE_REVIEW_URL)}">Leave us a review</a></p>
+    <p>And if anything wasn't right, please reply to this email and tell us directly -- we'd rather hear it from
+       you than not at all.</p>
+  `;
+
+  const response = await fetch(BREVO_SEND_URL, {
+    method: "POST",
+    headers: { "api-key": apiKey, "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({
+      sender: { email: senderEmail, name: "Phuket Rafting" },
+      to: [{ email: booking.guestEmail, name: booking.guestName }],
+      subject: `Thanks for rafting with us, ${booking.guestName}!`,
+      htmlContent: html,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Brevo send failed: ${response.status}`);
+  }
+  return true;
 }
 
 function escapeHtml(value: string): string {

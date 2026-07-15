@@ -45,8 +45,23 @@
     { "tag": "v1", "new_sqlite_classes": ["DOQueueHandler", "DOShardedTagCache"] }
   ],
 
-  // Booking-expiry sweep (every 15 min) + pre-arrival reminder emails (daily 01:00 UTC).
-  // Handlers land in Phase 4/9 — custom-worker.ts's scheduled() dispatches on event.cron.
+  // Public origin the guest-facing crons build manage-booking links against.
+  // Not a secret (it's in every URL bar), so it's committed config here rather
+  // than a `wrangler secret`. A Server Action can read the real Host header off
+  // the request; a scheduled() invocation has no request, so this is the only
+  // way it can know where it's deployed. NOT phuketrafting.com yet — that
+  // domain isn't pointed at this Worker until the Phase 9 DNS cutover; update
+  // both this and the staging value below when it is.
+  "vars": {
+    "PUBLIC_BASE_URL": "https://phuket-rafting.pskspace.workers.dev"
+  },
+
+  // "*/15 * * * *" — booking-expiry sweep, lands in Phase 5 (Stripe): it cancels
+  // `awaiting_payment` bookings past expiry and frees their capacity (plan §4),
+  // which needs Stripe checkout to exist first. Currently a logged no-op.
+  // "0 1 * * *" — daily guest notifications (T-1 pre-arrival, T+1 thank-you),
+  // implemented in Phase 4 via lib/cron/scheduled-notifications.ts.
+  // custom-worker.ts's scheduled() dispatches on event.cron.
   "triggers": {
     "crons": ["*/15 * * * *", "0 1 * * *"]
   },
@@ -61,6 +76,12 @@
   // every non-inherited binding is redeclared below, pointed at staging-only resources.
   "env": {
     "staging": {
+      // `vars` are NOT inherited by a named environment (same gotcha as
+      // durable_objects/r2_buckets/services above) -- without this, the
+      // staging Worker's crons would build guest links pointing at production.
+      "vars": {
+        "PUBLIC_BASE_URL": "https://phuket-rafting-staging.pskspace.workers.dev"
+      },
       "d1_databases": [
         {
           "binding": "DB",
@@ -98,6 +119,10 @@
     // local `npm run preview`/`wrangler dev`, which don't pass --env at all.
     "production": {
       "name": "phuket-rafting",
+      // Redeclared, not inherited -- see the staging note above.
+      "vars": {
+        "PUBLIC_BASE_URL": "https://phuket-rafting.pskspace.workers.dev"
+      },
       "d1_databases": [
         {
           "binding": "DB",
