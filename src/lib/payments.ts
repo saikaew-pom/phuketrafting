@@ -129,6 +129,24 @@ export interface CheckoutSessionInput {
   /** Absolute URLs; Stripe rejects relative ones. */
   successUrl: string;
   cancelUrl: string;
+  /**
+   * How long this payment page stays payable -- the SAME number the expiry
+   * sweeper uses as its cutoff (settings.holdMinutes).
+   *
+   * These two must never drift. Stripe's default is 24h; left at that while
+   * the sweeper reclaims the seat after 30 minutes, a guest could open the
+   * still-live page two hours later and pay for a seat we'd already given
+   * away -- markBookingPaid is guarded on awaiting_payment, so the payment
+   * would silently no-op and they'd have paid for nothing.
+   *
+   * NOTE: the sweeper deliberately waits holdMinutes PLUS a margin (see
+   * SWEEP_MARGIN_SECONDS in lib/cron/expiry-sweeper.ts). That is not drift
+   * and must not be "tidied" away: expires_at is anchored to SESSION
+   * creation, which is a second or two after the booking row's created_at
+   * that the sweeper measures from, so without the margin the sweeper cuts
+   * marginally EARLIER than Stripe expires the page.
+   */
+  holdMinutes: number;
 }
 
 export interface CheckoutSessionResult {
@@ -184,6 +202,9 @@ export async function createCheckoutSession(
       // reconciling a payment by hand.
       client_reference_id: input.bookingId,
       metadata: { booking_id: input.bookingId },
+      // Seconds, absolute. Kept in lockstep with the sweeper -- see
+      // CheckoutSessionInput.holdMinutes.
+      expires_at: Math.floor(Date.now() / 1000) + input.holdMinutes * 60,
       // Session metadata does NOT cascade to the PaymentIntent -- that's what
       // this parameter is for ("pass on metadata to a ... PaymentIntent
       // created from a CheckoutSession"). The PaymentIntent DOES copy its own

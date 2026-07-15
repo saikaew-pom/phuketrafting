@@ -1,6 +1,7 @@
 // @ts-ignore — .open-next/worker.js is generated at build time
 import handler from "./.open-next/worker.js";
 import { runScheduledNotifications } from "./src/lib/cron/scheduled-notifications";
+import { runExpirySweep } from "./src/lib/cron/expiry-sweeper";
 
 export default {
   fetch: handler.fetch,
@@ -36,10 +37,23 @@ export default {
         break;
       }
 
-      // Booking-expiry sweep -- Phase 5 (Stripe). Deliberately a no-op until
-      // there are `awaiting_payment` bookings to expire; see wrangler.jsonc.
-      case "*/15 * * * *":
+      // Booking-expiry sweep (plan §4). Backstop for a missed
+      // checkout.session.expired webhook -- see lib/cron/expiry-sweeper.ts.
+      case "*/15 * * * *": {
+        ctx.waitUntil(
+          runExpirySweep(env)
+            .then((result) => {
+              // Only log when it actually did something: this fires 96x/day
+              // and a "found:0" line every 15 minutes would bury the runs that
+              // matter under noise.
+              if (result.found > 0) console.log("expiry-sweep:", JSON.stringify(result));
+            })
+            .catch((err) => {
+              console.error("expiry-sweep failed", err);
+            })
+        );
         break;
+      }
 
       default:
         console.warn("unhandled cron trigger:", event.cron);

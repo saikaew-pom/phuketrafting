@@ -26,8 +26,17 @@ export interface CreateBookingResult {
 // staff-initiated events (status changes, check-in, notes) with the same
 // append-only audit trail the public booking flows below already use --
 // actor is the real requireStaff().email for those callers, not "system".
-export async function logBookingEvent(bookingId: string, actor: string, action: string, details: unknown): Promise<void> {
-  await getDb()
+export async function logBookingEvent(
+  bookingId: string,
+  actor: string,
+  action: string,
+  details: unknown,
+  // Overridable for the same reason as queries/bookings.ts's
+  // releaseUnpaidBooking: the expiry sweeper logs from scheduled(), where
+  // getDb() has no request context to resolve the binding from.
+  dbOverride?: D1Database
+): Promise<void> {
+  await (dbOverride ?? getDb())
     .prepare("INSERT INTO booking_logs (booking_id, actor, action, details) VALUES (?1, ?2, ?3, ?4)")
     .bind(bookingId, actor, action, JSON.stringify(details))
     .run();

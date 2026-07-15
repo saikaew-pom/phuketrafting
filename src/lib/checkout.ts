@@ -2,6 +2,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createCheckoutSession } from "@/lib/payments";
 import { getBookingDetail, recordCheckoutSession } from "@/lib/queries/bookings";
 import { getRequestOrigin } from "@/lib/request-origin";
+import { getPaymentPolicy } from "@/lib/queries/settings";
 import { logBookingEvent, type CreateBookingResult } from "@/lib/booking";
 
 /**
@@ -66,6 +67,9 @@ export async function openCheckoutForBooking(result: CreateBookingResult): Promi
         // that, and the guest may arrive here before it fires.
         successUrl: manageUrl,
         cancelUrl: manageUrl,
+        // Read from settings, not hardcoded, so this can never disagree with
+        // the sweeper's cutoff -- both call getPaymentPolicy().
+        holdMinutes: (await getPaymentPolicy()).holdMinutes,
       },
       env
     );

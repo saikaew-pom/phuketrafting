@@ -276,8 +276,13 @@ const UNPAID_GUARD = "status = 'pending' AND payment_status = 'awaiting_payment'
  * which would let the session overbook. Refusing to make it worse is the
  * conservative half of the trade.
  */
-export async function releaseUnpaidBooking(id: string): Promise<boolean> {
-  const db = getDb();
+export async function releaseUnpaidBooking(id: string, dbOverride?: D1Database): Promise<boolean> {
+  // Optional db, defaulting to getDb(): the webhook calls this inside a fetch
+  // (where getDb() works), the expiry sweeper calls it from scheduled() (where
+  // getDb() throws -- no request context, see queries/notifications.ts). Same
+  // optional-override shape as brevo.ts's BrevoConfig, so no existing caller
+  // changes.
+  const db = dbOverride ?? getDb();
   const [, cancelResult] = await db.batch([
     db
       .prepare(
@@ -458,4 +463,53 @@ export async function getDaySheet(date: string): Promise<DaySheet> {
     campArrivals: campArrivalRows.results,
     campDepartures: campDepartureRows.results,
   };
+}
+
+export interface ExpiredBookingRow {
+  id: string;
+  guest_name: string;
+  created_at: number;
+}
+
+/**
+ * Bookings whose payment window has run out and whose seat should come back
+ * (plan §4: "Expiry sweeper (Cron Trigger, 15 min): awaiting_payment bookings
+ * past expiry -> cancel + free capacity").
+ *
+ * The webhook already releases on checkout.session.expired, so this is the
+ * BACKSTOP for the case where that delivery never lands (an outage, a bad
+ * deploy, the destination misconfigured). Without it, one missed webhook
+ * silently holds a seat forever.
+ *
+ * `stripe_checkout_session_id IS NOT NULL` is the load-bearing condition, and
+ * it is NOT a stand-in for "unpaid". Read literally, plan §4 says to sweep any
+ * `awaiting_payment` booking past expiry -- but under a pay_on_day policy
+ * every booking is awaiting_payment forever by design (no deposit, no session,
+ * nothing to collect until they arrive), so that rule would auto-cancel the
+ * entire book of legitimate business the moment staff switched policy. Only a
+ * booking that actually has a Stripe session pending is waiting on a payment
+ * that can expire.
+ *
+ * It also (deliberately) spares a booking whose Checkout never opened at all
+ * (checkout.ts's fail-open path, logged as checkout_open_failed): that guest
+ * was never given a way to pay, so cancelling them for not paying would punish
+ * them for our outage. Staff chase those from the activity log instead.
+ */
+export async function listExpiredUnpaidBookings(
+  cutoffUnix: number,
+  dbOverride?: D1Database
+): Promise<ExpiredBookingRow[]> {
+  // See releaseUnpaidBooking on why db is overridable.
+  const { results } = await (dbOverride ?? getDb())
+    .prepare(
+      `SELECT id, guest_name, created_at
+         FROM bookings
+        WHERE ${UNPAID_GUARD}
+          AND stripe_checkout_session_id IS NOT NULL
+          AND created_at < ?1
+        ORDER BY created_at`
+    )
+    .bind(cutoffUnix)
+    .all<ExpiredBookingRow>();
+  return results;
 }
