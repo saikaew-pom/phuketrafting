@@ -15,6 +15,9 @@ export default async function BookingsListPage({
   return (
     <div>
       <h1>Bookings</h1>
+      <p>
+        <Link href="/dashboard/bookings/new">+ New booking</Link>
+      </p>
       <form method="get" style={{ margin: "16px 0" }}>
         <label>
           Status{" "}

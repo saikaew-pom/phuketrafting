@@ -98,6 +98,13 @@ export interface CreateTourBookingInput {
   source: BookingSource;
   bookedByAgentId: string | null;
   consentMarketing: boolean;
+  // Staff-only escape hatch (dashboard/bookings/new/actions.ts) -- drops the
+  // capacity ceiling from the guard below while keeping the is_blocked check,
+  // so a session staff have deliberately decided to overbook (an extra guest
+  // request, a VIP, etc.) can still accept the booking instead of failing
+  // with no_capacity. Never set from the public booking-actions.ts path --
+  // there is no way for a guest-facing request to reach this.
+  allowOverbook?: boolean;
 }
 
 export async function createTourBooking(input: CreateTourBookingInput): Promise<CreateBookingResult> {
@@ -157,10 +164,9 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
   // The booking INSERT and the capacity UPDATE are sent as one db.batch()
   // call -- D1 runs a batch as a single transaction, and since D1/SQLite
   // serializes writers, no other write can interleave between these two
-  // statements. Both are guarded by the SAME condition
-  // (booked_count + paxDelta <= capacity - allotment_hold), and the INSERT
-  // runs first, so the UPDATE's guard reads the identical pre-claim state
-  // the INSERT's guard just read -- either both statements' guards pass
+  // statements. Both are guarded by the SAME condition, and the INSERT runs
+  // first, so the UPDATE's guard reads the identical pre-claim state the
+  // INSERT's guard just read -- either both statements' guards pass
   // (booking created AND capacity claimed) or both fail as no-ops (nothing
   // written, nothing claimed). This replaces an earlier claim-then-insert
   // sequence that needed a manual compensating release if the insert failed
@@ -169,6 +175,17 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
   // capacity with no booking to account for it. A single db.batch() closes
   // that gap entirely: there is no gap between two RPCs to be evicted in the
   // middle of.
+  //
+  // allowOverbook drops the "booked_count + paxDelta <= capacity -
+  // allotment_hold" half of the guard -- is_blocked is still enforced either
+  // way (a session staff genuinely blocked, e.g. for maintenance, isn't
+  // bookable even with an explicit override; that's a different kind of
+  // "no" than "we're full").
+  const guardClause = input.allowOverbook
+    ? "is_blocked = 0"
+    : "is_blocked = 0 AND booked_count + ? <= capacity - allotment_hold";
+  const guardBindExtra = input.allowOverbook ? [] : [paxDelta];
+
   const insertStmt = db
     .prepare(
       `INSERT INTO bookings (
@@ -179,8 +196,7 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
        )
        SELECT ?,'tour',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
         WHERE EXISTS (
-          SELECT 1 FROM tour_sessions
-           WHERE id = ? AND is_blocked = 0 AND booked_count + ? <= capacity - allotment_hold
+          SELECT 1 FROM tour_sessions WHERE id = ? AND ${guardClause}
         )`
     )
     .bind(
@@ -205,16 +221,16 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
       promoCodeId,
       input.consentMarketing ? 1 : 0,
       input.tourSessionId,
-      paxDelta
+      ...guardBindExtra
     );
 
   const updateStmt = db
     .prepare(
       `UPDATE tour_sessions
           SET booked_count = booked_count + ?, updated_at = unixepoch()
-        WHERE id = ? AND is_blocked = 0 AND booked_count + ? <= capacity - allotment_hold`
+        WHERE id = ? AND ${guardClause}`
     )
-    .bind(paxDelta, input.tourSessionId, paxDelta);
+    .bind(paxDelta, input.tourSessionId, ...guardBindExtra);
 
   const [insertResult, updateResult] = await db.batch([insertStmt, updateStmt]);
 
@@ -232,7 +248,11 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
   }
 
   await runPostCommitEffect(bookingId, "booking_logs", () =>
-    logBookingEvent(bookingId, "system", "created", { source: input.source, total: price.total })
+    logBookingEvent(bookingId, "system", "created", {
+      source: input.source,
+      total: price.total,
+      ...(input.allowOverbook ? { overbooked: true } : {}),
+    })
   );
   if (price.promoApplied) {
     await runPostCommitEffect(bookingId, "promo_redemption", () => recordPromoRedemption(price.promoApplied!.code));

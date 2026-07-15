@@ -108,6 +108,37 @@ export async function listAvailableTourSessions(
   return results;
 }
 
+export interface AdminTourSession extends AvailableTourSession {
+  is_blocked: number;
+}
+
+/**
+ * Every tour session in a date range, regardless of remaining capacity --
+ * unlike listAvailableTourSessions (which the public widget uses and which
+ * deliberately hides full sessions), staff creating a booking manually need
+ * to SEE a full session to decide whether to overbook it. is_blocked
+ * sessions are included too (not booked_count-filtered) so staff aren't
+ * confused by a session silently missing from the list; the create-booking
+ * action still refuses a blocked session outright, overbook or not.
+ */
+export async function listTourSessionsForAdmin(
+  tourId: string,
+  fromDate: string,
+  toDate: string
+): Promise<AdminTourSession[]> {
+  const { results } = await getDb()
+    .prepare(
+      `SELECT id, date, start_time, capacity, booked_count, allotment_hold, is_blocked
+         FROM tour_sessions
+        WHERE tour_id = ?1
+          AND date >= ?2 AND date <= ?3
+        ORDER BY date, start_time`
+    )
+    .bind(tourId, fromDate, toDate)
+    .all<AdminTourSession>();
+  return results;
+}
+
 const ACTIVE_BOOKING_STATUSES = ["pending", "confirmed"] as const;
 
 // bookingColumns' keys become raw SQL column names (see the query below) --
