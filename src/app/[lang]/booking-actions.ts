@@ -88,6 +88,7 @@ export interface BookingFormState {
   status: "idle" | "success" | "error";
   message?: string;
   bookingId?: string;
+  manageToken?: string;
 }
 
 const BookingSchema = z.object({
@@ -193,7 +194,12 @@ export async function submitTourBooking(_prevState: BookingFormState, formData: 
       return { status: "error", message: messages[result.reason ?? ""] ?? "Something went wrong -- please try WhatsApp instead." };
     }
 
-    return { status: "success", message: "Booked! We'll confirm your pickup details shortly.", bookingId: result.bookingId };
+    return {
+      status: "success",
+      message: "Booked! We'll confirm your pickup details shortly.",
+      bookingId: result.bookingId,
+      manageToken: result.manageToken,
+    };
   } catch (err) {
     console.error("submitTourBooking failed", err);
     return { status: "error", message: "Something went wrong -- please try WhatsApp instead." };

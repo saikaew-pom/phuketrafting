@@ -69,6 +69,15 @@ interface BookingReceivedEmail {
   date: string;
   total: number;
   currency: string;
+  // Absolute URL to the guest self-service page, or null if the booking has
+  // no manage_token (shouldn't happen for anything created after this
+  // feature shipped, but older/edge-case rows could still be null) --
+  // computed by the caller (dashboard/bookings/actions.ts) from the actual
+  // request Host header, NOT lib/site.ts's SITE_URL: that constant is the
+  // eventual custom domain, which isn't pointed at this Worker yet (DNS
+  // cutover is Phase 9) -- an email link must work on whatever origin is
+  // actually live right now.
+  manageUrl: string | null;
 }
 
 /**
@@ -107,6 +116,7 @@ export async function sendBookingReceivedEmail(booking: BookingReceivedEmail): P
     <p><strong>Booking:</strong> ${escapeHtml(booking.productName)}<br/>
        <strong>Date:</strong> ${escapeHtml(booking.date)}<br/>
        <strong>Total:</strong> ${totalFormatted} ${escapeHtml(booking.currency)}</p>
+    ${booking.manageUrl ? `<p><a href="${escapeHtml(booking.manageUrl)}">View or manage your booking</a></p>` : ""}
     <p>Questions? Just reply to this email or message us on WhatsApp.</p>
   `;
 
@@ -129,6 +139,63 @@ export async function sendBookingReceivedEmail(booking: BookingReceivedEmail): P
     throw new Error(`Brevo send failed: ${response.status}`);
   }
   return true;
+}
+
+interface ManageRequestNotification {
+  bookingId: string;
+  guestName: string;
+  productName: string;
+  requestType: "cancel" | "reschedule";
+  message: string;
+}
+
+/**
+ * Best-effort notification to the business inbox when a guest submits a
+ * cancel/reschedule request from the manage-booking page (plan §2: "requests
+ * reschedule/cancel -- creates a request for staff, never auto-mutates").
+ * The durable record of the request is the booking_logs row written by the
+ * caller (manage-actions.ts) BEFORE this is called -- same fail-open
+ * reasoning as sendEnquiryNotification: staff can always find the request on
+ * the booking's Activity log even if this email never arrives, so a Brevo
+ * outage must never turn a real guest request into a lost one.
+ */
+export async function sendManageRequestNotification(req: ManageRequestNotification): Promise<void> {
+  const { env } = getCloudflareContext();
+  const apiKey = env.BREVO_API_KEY;
+  const senderEmail = env.BREVO_SENDER_EMAIL;
+  const notifyEmail = env.BREVO_NOTIFY_EMAIL;
+
+  if (!apiKey || !senderEmail || !notifyEmail) {
+    return;
+  }
+
+  const label = req.requestType === "cancel" ? "Cancellation" : "Reschedule";
+  const html = `
+    <p><strong>${label} request from a guest</strong></p>
+    <p><strong>Booking:</strong> ${escapeHtml(req.productName)} (#${escapeHtml(req.bookingId)})<br/>
+       <strong>Guest:</strong> ${escapeHtml(req.guestName)}</p>
+    ${req.message ? `<p><strong>Message:</strong><br/>${escapeHtml(req.message).replace(/\n/g, "<br/>")}</p>` : ""}
+    <p>Review in the dashboard: /dashboard/bookings/${escapeHtml(req.bookingId)}</p>
+  `;
+
+  const response = await fetch(BREVO_SEND_URL, {
+    method: "POST",
+    headers: {
+      "api-key": apiKey,
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify({
+      sender: { email: senderEmail, name: "Phuket Rafting Website" },
+      to: [{ email: notifyEmail }],
+      subject: `${label} request -- ${req.guestName} (${req.productName})`,
+      htmlContent: html,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Brevo send failed: ${response.status}`);
+  }
 }
 
 function escapeHtml(value: string): string {

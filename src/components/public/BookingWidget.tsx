@@ -216,6 +216,12 @@ export function BookingWidget({
       {state.status !== "idle" && (
         <p className={"pr-enquiry-status " + (state.status === "success" ? "pr-enquiry-status-success" : "pr-enquiry-status-error")}>
           {state.message}
+          {state.status === "success" && state.manageToken && (
+            <>
+              {" "}
+              <a href={`/${locale}/manage/${state.manageToken}`}>View or manage your booking</a>
+            </>
+          )}
         </p>
       )}
 

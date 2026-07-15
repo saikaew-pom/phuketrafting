@@ -130,6 +130,32 @@ export async function getBookingDetail(id: string): Promise<BookingDetail | null
   return row ?? null;
 }
 
+// Same shape/joins as getBookingDetail, keyed by the guest self-service
+// token instead of the internal id -- the public /[lang]/manage/[token]
+// page uses this so a compromised/guessed manage_token can only ever surface
+// exactly what the guest-facing page already renders (see that page's own
+// comment on which BookingDetail fields it picks vs. omits).
+export async function getBookingByManageToken(token: string): Promise<BookingDetail | null> {
+  const row = await getDb()
+    .prepare(
+      `SELECT
+         b.*,
+         COALESCE(ts.date, b.check_in) AS date,
+         COALESCE(t.name, cz.name) AS product_name,
+         pz.name AS pickup_zone_name
+       FROM bookings b
+       LEFT JOIN tour_sessions ts ON b.tour_session_id = ts.id
+       LEFT JOIN tours t ON ts.tour_id = t.id
+       LEFT JOIN camp_units cu ON b.camp_unit_id = cu.id
+       LEFT JOIN camp_zones cz ON cu.zone_id = cz.id
+       LEFT JOIN pickup_zones pz ON b.pickup_zone_id = pz.id
+       WHERE b.manage_token = ?1`
+    )
+    .bind(token)
+    .first<BookingDetail>();
+  return row ?? null;
+}
+
 export async function listBookingLogs(bookingId: string): Promise<BookingLog[]> {
   const { results } = await getDb()
     .prepare("SELECT id, booking_id, actor, action, details, created_at FROM booking_logs WHERE booking_id = ?1 ORDER BY created_at DESC")

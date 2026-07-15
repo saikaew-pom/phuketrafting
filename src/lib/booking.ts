@@ -7,6 +7,11 @@ export type BookingSource = "web" | "chatbot" | "whatsapp" | "staff" | "ota" | "
 export interface CreateBookingResult {
   success: boolean;
   bookingId?: string;
+  // Guest self-service link secret (plan §2: "signed token in every email").
+  // Always set alongside bookingId on success -- generated with the same
+  // crypto.randomUUID() primitive already used for bookingId itself, just a
+  // second, independent random value bound to bookings.manage_token.
+  manageToken?: string;
   reason?: "not_found" | "no_capacity" | "blocked" | "invalid_input";
 }
 
@@ -160,6 +165,7 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
   // consume a seat.
   const paxDelta = input.adults + input.children;
   const bookingId = crypto.randomUUID();
+  const manageToken = crypto.randomUUID();
 
   // The booking INSERT and the capacity UPDATE are sent as one db.batch()
   // call -- D1 runs a batch as a single transaction, and since D1/SQLite
@@ -192,9 +198,10 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
          id, type, tour_session_id, adults, children, infants, hotel,
          pickup_zone_id, transfer_fee, addon_choice, subtotal,
          discount_amount, total, guest_name, guest_email, guest_phone,
-         locale, source, booked_by_agent_id, promo_code_id, consent_marketing
+         locale, source, booked_by_agent_id, promo_code_id, consent_marketing,
+         manage_token
        )
-       SELECT ?,'tour',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+       SELECT ?,'tour',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
         WHERE EXISTS (
           SELECT 1 FROM tour_sessions WHERE id = ? AND ${guardClause}
         )`
@@ -220,6 +227,7 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
       input.bookedByAgentId,
       promoCodeId,
       input.consentMarketing ? 1 : 0,
+      manageToken,
       input.tourSessionId,
       ...guardBindExtra
     );
@@ -258,7 +266,7 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
     await runPostCommitEffect(bookingId, "promo_redemption", () => recordPromoRedemption(price.promoApplied!.code));
   }
 
-  return { success: true, bookingId };
+  return { success: true, bookingId, manageToken };
 }
 
 export interface CreateCampBookingInput {
@@ -336,12 +344,14 @@ export async function createCampBooking(input: CreateCampBookingInput): Promise<
   const promoCodeId = price.promoApplied ? await resolvePromoCodeId(price.promoApplied.code) : null;
 
   const bookingId = crypto.randomUUID();
+  const manageToken = crypto.randomUUID();
   // claimCampUnitBooking's guarded INSERT ... SELECT ... WHERE does the
   // availability check and the row insert as one atomic statement (see
   // scheduling.ts) -- no separate claim-then-insert, so no compensation
   // step is needed here the way the tour path needs one.
   const claim = await claimCampUnitBooking({
     bookingId,
+    manageToken,
     campUnitId: input.campUnitId,
     checkIn: input.checkIn,
     checkOut: input.checkOut,
@@ -371,5 +381,5 @@ export async function createCampBooking(input: CreateCampBookingInput): Promise<
     await runPostCommitEffect(bookingId, "promo_redemption", () => recordPromoRedemption(price.promoApplied!.code));
   }
 
-  return { success: true, bookingId };
+  return { success: true, bookingId, manageToken };
 }

@@ -54,6 +54,7 @@ export interface CampBookingFormState {
   status: "idle" | "success" | "error";
   message?: string;
   bookingId?: string;
+  manageToken?: string;
 }
 
 const CampBookingSchema = z.object({
@@ -173,7 +174,12 @@ export async function submitCampBooking(
       return { status: "error", message: messages[result.reason ?? ""] ?? "Something went wrong -- please try WhatsApp instead." };
     }
 
-    return { status: "success", message: "Booked! We'll confirm your pickup details shortly.", bookingId: result.bookingId };
+    return {
+      status: "success",
+      message: "Booked! We'll confirm your pickup details shortly.",
+      bookingId: result.bookingId,
+      manageToken: result.manageToken,
+    };
   } catch (err) {
     console.error("submitCampBooking failed", err);
     return { status: "error", message: "Something went wrong -- please try WhatsApp instead." };

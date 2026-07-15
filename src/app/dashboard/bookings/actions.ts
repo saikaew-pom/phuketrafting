@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/access";
@@ -96,6 +97,11 @@ export async function notifyGuestEmail(bookingId: string, _formData: FormData) {
   // background use) -- catch it so it records last_email_status='failed'
   // and shows up in the activity log, rather than crashing this action into
   // the same unhandled-500 gap flagged for the rest of /dashboard.
+  // Built from the actual request Host header, not lib/site.ts's SITE_URL --
+  // see sendBookingReceivedEmail's manageUrl doc comment for why.
+  const host = (await headers()).get("host");
+  const manageUrl = booking.manage_token && host ? `https://${host}/${booking.locale}/manage/${booking.manage_token}` : null;
+
   let status: "sent" | "failed" | "not_configured";
   try {
     const sent = await sendBookingReceivedEmail({
@@ -105,6 +111,7 @@ export async function notifyGuestEmail(bookingId: string, _formData: FormData) {
       date: booking.date ?? "",
       total: booking.total,
       currency: booking.currency,
+      manageUrl,
     });
     // sendBookingReceivedEmail returns false (does not throw) when Brevo
     // isn't configured -- confirmed live that without this check, a

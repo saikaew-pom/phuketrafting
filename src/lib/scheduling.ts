@@ -183,6 +183,11 @@ const ALLOWED_CAMP_BOOKING_COLUMNS = new Set([
  */
 export async function claimCampUnitBooking(params: {
   bookingId: string;
+  // Guest self-service link secret (plan §2) -- a fixed, always-set column
+  // at creation time, same tier as bookingId/type/camp_unit_id below, not a
+  // caller-supplied "booking column" from the allowlist (manage_token is
+  // explicitly excluded from ALLOWED_CAMP_BOOKING_COLUMNS as system-managed).
+  manageToken: string;
   campUnitId: string;
   checkIn: string;
   checkOut: string;
@@ -196,13 +201,22 @@ export async function claimCampUnitBooking(params: {
     }
   }
 
-  const columns = ["id", "type", "camp_unit_id", "check_in", "check_out", ...Object.keys(params.bookingColumns)];
+  const columns = [
+    "id",
+    "type",
+    "camp_unit_id",
+    "check_in",
+    "check_out",
+    "manage_token",
+    ...Object.keys(params.bookingColumns),
+  ];
   const insertValues = [
     params.bookingId,
     "camp",
     params.campUnitId,
     params.checkIn,
     params.checkOut,
+    params.manageToken,
     ...Object.values(params.bookingColumns),
   ];
 
