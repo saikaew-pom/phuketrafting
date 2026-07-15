@@ -207,6 +207,101 @@ export async function recordCheckoutSession(id: string, sessionId: string): Prom
   return result.meta.changes > 0;
 }
 
+/**
+ * Records that Stripe collected the deposit.
+ *
+ * Deliberately touches payment_status ONLY -- `status` stays `pending`. Plan
+ * §4 is explicit: "Booking is never confirmed by payment alone -- staff still
+ * confirms (human-in-the-loop rule)." Paying is not the same as us having a
+ * guide, a raft and a seat sorted for that guest.
+ *
+ * Guarded on awaiting_payment so a replayed/duplicate delivery can't walk a
+ * refunded booking back to paid. Returns false if it didn't apply.
+ */
+export async function markBookingPaid(id: string): Promise<boolean> {
+  const result = await getDb()
+    .prepare(
+      `UPDATE bookings SET payment_status = 'paid', updated_at = unixepoch()
+        WHERE id = ?1 AND payment_status = 'awaiting_payment'`
+    )
+    .bind(id)
+    .run();
+  return result.meta.changes > 0;
+}
+
+/** Records a Stripe refund. Guarded so only a paid booking can become refunded. */
+export async function markBookingRefunded(id: string): Promise<boolean> {
+  const result = await getDb()
+    .prepare(
+      `UPDATE bookings SET payment_status = 'refunded', updated_at = unixepoch()
+        WHERE id = ?1 AND payment_status = 'paid'`
+    )
+    .bind(id)
+    .run();
+  return result.meta.changes > 0;
+}
+
+// Only these two columns decide "this booking is still holding inventory".
+const UNPAID_GUARD = "status = 'pending' AND payment_status = 'awaiting_payment'";
+
+/**
+ * Releases a booking whose Checkout session expired without payment (plan §4:
+ * "checkout.session.expired -> release").
+ *
+ * Cancels the booking AND frees the tour seat it was holding, as ONE
+ * db.batch() -- i.e. one transaction. Doing it as two separate calls would
+ * leave a real gap: a Worker eviction between them leaves the booking
+ * cancelled while tour_sessions.booked_count still counts its seats, so that
+ * capacity is lost forever with no booking to account for it. Exactly the
+ * failure that made createTourBooking use a batch in the first place.
+ *
+ * ORDER MATTERS: the capacity release runs FIRST and reads the booking's
+ * still-`pending` state through its own EXISTS guard. Reversing them would
+ * break it -- statements in a batch see each other's writes, so once the
+ * booking row is cancelled, the release's guard would evaluate false and the
+ * seat would never come back. Both statements carry the same guard, so either
+ * both apply or neither does.
+ *
+ * Camp bookings hold no counter (availability is derived from overlapping
+ * active bookings, see scheduling.ts), so `tour_session_id IS NOT NULL` makes
+ * the release a no-op for them -- cancelling the row IS the release.
+ *
+ * The `booked_count - pax >= 0` guard mirrors claimTourSessionCapacity's
+ * `booked_count + delta >= 0` -- a negative counter is an invariant violation
+ * there and must be one here too. It can only bite if the counter is ALREADY
+ * inconsistent with the bookings that reference it, and in that case the
+ * counter is deliberately left alone while the booking still cancels: an
+ * under-counted session is a bug to investigate, but a NEGATIVE one actively
+ * manufactures phantom capacity (availability reads `capacity - booked_count`),
+ * which would let the session overbook. Refusing to make it worse is the
+ * conservative half of the trade.
+ */
+export async function releaseUnpaidBooking(id: string): Promise<boolean> {
+  const db = getDb();
+  const [, cancelResult] = await db.batch([
+    db
+      .prepare(
+        `UPDATE tour_sessions
+            SET booked_count = booked_count - (SELECT b.adults + b.children FROM bookings b WHERE b.id = ?1),
+                updated_at = unixepoch()
+          WHERE id = (SELECT b.tour_session_id FROM bookings b WHERE b.id = ?1)
+            AND EXISTS (
+              SELECT 1 FROM bookings b
+               WHERE b.id = ?1 AND b.tour_session_id IS NOT NULL AND ${UNPAID_GUARD}
+            )
+            AND booked_count - (SELECT b.adults + b.children FROM bookings b WHERE b.id = ?1) >= 0`
+      )
+      .bind(id),
+    db
+      .prepare(
+        `UPDATE bookings SET status = 'cancelled', payment_status = 'failed', updated_at = unixepoch()
+          WHERE id = ?1 AND ${UNPAID_GUARD}`
+      )
+      .bind(id),
+  ]);
+  return cancelResult.meta.changes > 0;
+}
+
 export async function recordEmailNotification(id: string, status: "sent" | "failed" | "not_configured"): Promise<boolean> {
   const result = await getDb()
     .prepare("UPDATE bookings SET last_email_sent_at = unixepoch(), last_email_status = ?1, updated_at = unixepoch() WHERE id = ?2")

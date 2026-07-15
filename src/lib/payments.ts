@@ -12,6 +12,26 @@ export interface StripeConfig {
   STRIPE_SECRET_KEY?: string;
 }
 
+export interface StripeWebhookConfig extends StripeConfig {
+  STRIPE_WEBHOOK_SECRET?: string;
+}
+
+/**
+ * Pinned deliberately, not left to the SDK's default.
+ *
+ * This value must match the API version configured on the Stripe webhook
+ * DESTINATION, because that's what decides the shape of the event JSON Stripe
+ * sends us -- and this SDK's TypeScript types describe exactly this version.
+ * Leaving it implicit means a routine `npm update stripe` silently bumps the
+ * version our requests use and desyncs it from the destination, with no
+ * compile error and no test failure: the first symptom would be a field
+ * quietly reading undefined on a real payment.
+ *
+ * If you change this, change the destination's API version to match (Stripe
+ * dashboard -> Webhooks -> the destination -> API version).
+ */
+export const STRIPE_API_VERSION = "2026-06-24.dahlia";
+
 /**
  * Built per call, never cached in module scope.
  *
@@ -32,6 +52,7 @@ function getStripe(config: StripeConfig): Stripe | null {
   const key = config.STRIPE_SECRET_KEY;
   if (!key) return null;
   return new Stripe(key, {
+    apiVersion: STRIPE_API_VERSION,
     httpClient: Stripe.createFetchHttpClient(),
     // The SDK defaults (timeout 80_000, maxNetworkRetries 2) are wrong for
     // this call site. createCheckoutSession is awaited INSIDE the booking
@@ -61,6 +82,42 @@ function getStripe(config: StripeConfig): Stripe | null {
  */
 export function bahtToSatang(baht: number): number {
   return Math.round(baht * 100);
+}
+
+/** Re-exported so route handlers can type events without importing `stripe`. */
+export type StripeEvent = Stripe.Event;
+export type StripeCheckoutSession = Stripe.Checkout.Session;
+export type StripeCharge = Stripe.Charge;
+
+/**
+ * Verifies a Stripe webhook's signature and returns the parsed event.
+ *
+ * THROWS on any bad/missing/expired signature -- the caller must treat that as
+ * a rejected request, never as a processable event. This is the entire
+ * security boundary of the webhook: without it, anyone who knows the endpoint
+ * URL could POST a forged "payment succeeded" and mark bookings paid.
+ *
+ * Two Workers-specific requirements, both easy to get silently wrong:
+ *  - constructEventAsync, not constructEvent: the sync version needs Node's
+ *    crypto for HMAC. On workerd only the async path (backed by SubtleCrypto)
+ *    works.
+ *  - `rawBody` must be the EXACT bytes Stripe sent. The signature is computed
+ *    over the raw payload, so any re-serialisation (JSON.parse -> stringify,
+ *    or a framework body parser) changes whitespace/key order and every
+ *    signature fails. Callers must pass request.text() and nothing else.
+ */
+export async function constructWebhookEvent(
+  rawBody: string,
+  signature: string,
+  config: StripeWebhookConfig
+): Promise<Stripe.Event> {
+  const stripe = getStripe(config);
+  if (!stripe) throw new Error("Stripe is not configured (STRIPE_SECRET_KEY missing)");
+
+  const secret = config.STRIPE_WEBHOOK_SECRET;
+  if (!secret) throw new Error("STRIPE_WEBHOOK_SECRET is not configured");
+
+  return stripe.webhooks.constructEventAsync(rawBody, signature, secret, undefined, Stripe.createSubtleCryptoProvider());
 }
 
 export interface CheckoutSessionInput {
@@ -127,6 +184,19 @@ export async function createCheckoutSession(
       // reconciling a payment by hand.
       client_reference_id: input.bookingId,
       metadata: { booking_id: input.bookingId },
+      // Session metadata does NOT cascade to the PaymentIntent -- that's what
+      // this parameter is for ("pass on metadata to a ... PaymentIntent
+      // created from a CheckoutSession"). The PaymentIntent DOES copy its own
+      // metadata onto the Charge it creates, so this is the only link that
+      // puts booking_id on a Charge.
+      //
+      // Load-bearing for charge.refunded: that event carries a Charge, which
+      // has no client_reference_id and never sees the session's metadata. Without
+      // this, charge.metadata.booking_id is undefined and every refund silently
+      // no-ops -- the webhook 200s, and nothing is recorded.
+      //
+      // Kept in sync with metadata above; both are set from the same bookingId.
+      payment_intent_data: { metadata: { booking_id: input.bookingId } },
     },
     // Stripe-side idempotency: a double-submit or a retry that reaches this
     // twice for the same booking returns the SAME session rather than a
