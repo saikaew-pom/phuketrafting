@@ -19,7 +19,7 @@ export function StickyBar({ fromPrice }: { fromPrice: number }) {
       <div>
         <span className="pr-sticky-from">From {baht(fromPrice)}</span>
         <span className="pr-sticky-sub">
-          <Star size={12} className="pr-ico pr-star-on" /> 4.9 · Free to reserve
+          <Star size={12} className="pr-ico pr-star-on" /> 4.9 · Free cancellation
         </span>
       </div>
       <a

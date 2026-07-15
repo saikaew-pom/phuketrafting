@@ -148,6 +148,19 @@ export function CampBookingWidget({ zones, locale }: { zones: CampZoneOption[]; 
       });
   }, [zoneId, stayType, checkIn, checkOut, promoCode]);
 
+  // Stripe Checkout is a hosted page on Stripe's own domain, so this is a
+  // full document navigation, not a router push. Done in an effect rather
+  // than inside the action because a Server Action can't redirect to an
+  // external origin. The success message renders for the instant before the
+  // browser leaves, and remains the final state for anyone with no payment
+  // step (no deposit owed, or Checkout unavailable -- see
+  // lib/checkout.ts, which never throws).
+  useEffect(() => {
+    if (state.status === "success" && state.checkoutUrl) {
+      window.location.href = state.checkoutUrl;
+    }
+  }, [state]);
+
   // Turnstile tokens are single-use -- same fix as BookingWidget.tsx.
   useEffect(() => {
     if (state.status === "error") {
@@ -181,7 +194,7 @@ export function CampBookingWidget({ zones, locale }: { zones: CampZoneOption[]; 
         <span className="pr-bform-title">Reserve a campsite</span>
         <span className="pr-pill pr-pill-live">
           <span className="pr-dot" />
-          Free to reserve
+          Free cancellation
         </span>
       </div>
 
@@ -431,6 +444,20 @@ export function CampBookingWidget({ zones, locale }: { zones: CampZoneOption[]; 
             <span className="pr-total-val">{price ? baht(price.total) : baht(0)}</span>
           </div>
 
+          {/* Plan §4: "The widget, chatbot card, and emails all state the
+              split explicitly ('Pay ฿X now, ฿Y on the day')". Gated on the
+              same depositAmount the foot's "No upfront payment" reads, so the
+              two can never contradict each other -- which they did before
+              this gate existed, while a deposit was owed. */}
+          {price && price.depositAmount > 0 && price.balanceAmount > 0 && (
+            <p className="pr-bform-split">
+              Pay {baht(price.depositAmount)} now to reserve, {baht(price.balanceAmount)} on the day.
+            </p>
+          )}
+          {price && price.depositAmount > 0 && price.balanceAmount === 0 && (
+            <p className="pr-bform-split">Pay {baht(price.depositAmount)} now to confirm your booking.</p>
+          )}
+
           {TURNSTILE_SITE_KEY && <div className="cf-turnstile" data-sitekey={TURNSTILE_SITE_KEY} />}
 
           <button
@@ -441,9 +468,15 @@ export function CampBookingWidget({ zones, locale }: { zones: CampZoneOption[]; 
             <Zap size={18} className="pr-ico" /> {pending ? "Booking..." : "Reserve now"}
           </button>
           <div className="pr-bform-foot">
-            <span>
-              <Check size={14} className="pr-ico" /> No upfront payment
-            </span>
+            {/* Only true when nothing is actually collected up front. Gated
+                on the same depositAmount as the split line above so exactly
+                one of the two ever renders. Before a price loads the policy's
+                effect is unknown, so assert nothing rather than guess. */}
+            {price && price.depositAmount === 0 && (
+              <span>
+                <Check size={14} className="pr-ico" /> No upfront payment
+              </span>
+            )}
             <span>
               <Check size={14} className="pr-ico" /> Instant confirmation
             </span>

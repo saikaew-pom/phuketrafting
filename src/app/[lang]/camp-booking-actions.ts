@@ -5,6 +5,7 @@ import { z } from "zod";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { createCampBooking } from "@/lib/booking";
+import { openCheckoutForBooking } from "@/lib/checkout";
 import { calculateCampPrice, type PriceBreakdown } from "@/lib/pricing";
 import { listAvailableCampUnits, type AvailableCampUnit } from "@/lib/scheduling";
 import { getCampRates, type CampRate } from "@/lib/queries/camping";
@@ -55,6 +56,8 @@ export interface CampBookingFormState {
   message?: string;
   bookingId?: string;
   manageToken?: string;
+  /** See BookingFormState.checkoutUrl -- same contract. */
+  checkoutUrl?: string;
 }
 
 const CampBookingSchema = z.object({
@@ -179,6 +182,7 @@ export async function submitCampBooking(
       message: "Booked! We'll confirm your pickup details shortly.",
       bookingId: result.bookingId,
       manageToken: result.manageToken,
+      checkoutUrl: await openCheckoutForBooking(result),
     };
   } catch (err) {
     console.error("submitCampBooking failed", err);

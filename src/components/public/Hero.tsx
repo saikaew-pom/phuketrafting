@@ -41,7 +41,7 @@ export function Hero({
               <ShowerHead size={17} className="pr-ico" /> Hot showers
             </span>
             <span>
-              <BadgeCheck size={17} className="pr-ico" /> Free to reserve
+              <BadgeCheck size={17} className="pr-ico" /> Free cancellation
             </span>
           </div>
           <div className="pr-hero-actions">

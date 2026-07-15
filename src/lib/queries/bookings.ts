@@ -193,6 +193,20 @@ export async function updateBookingNotes(id: string, notes: string): Promise<boo
   return result.meta.changes > 0;
 }
 
+/**
+ * Records which Stripe Checkout Session was created for a booking (plan §4:
+ * "Checkout session id stored on the row"). This is the only link from a
+ * Stripe payment back to a D1 row for staff reconciling by hand; the webhook
+ * (5c) uses the session's own client_reference_id.
+ */
+export async function recordCheckoutSession(id: string, sessionId: string): Promise<boolean> {
+  const result = await getDb()
+    .prepare("UPDATE bookings SET stripe_checkout_session_id = ?1, updated_at = unixepoch() WHERE id = ?2")
+    .bind(sessionId, id)
+    .run();
+  return result.meta.changes > 0;
+}
+
 export async function recordEmailNotification(id: string, status: "sent" | "failed" | "not_configured"): Promise<boolean> {
   const result = await getDb()
     .prepare("UPDATE bookings SET last_email_sent_at = unixepoch(), last_email_status = ?1, updated_at = unixepoch() WHERE id = ?2")

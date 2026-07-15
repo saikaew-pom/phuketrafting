@@ -90,7 +90,7 @@ export const FAQS = [
   },
   {
     q: "How do I pay?",
-    a: "Reserve your date free on WhatsApp -- no upfront payment required. You can settle on the day of your adventure.",
+    a: "Book online and pay a 25% deposit to lock in your date -- the rest is due on the day of your adventure. Cancel or reschedule free up to 72 hours before departure and the deposit is refunded in full. Prefer to talk first? Message us on WhatsApp.",
   },
   {
     q: "What if it rains?",

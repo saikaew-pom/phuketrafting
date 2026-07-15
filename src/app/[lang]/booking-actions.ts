@@ -5,6 +5,7 @@ import { z } from "zod";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { createTourBooking } from "@/lib/booking";
+import { openCheckoutForBooking } from "@/lib/checkout";
 import { calculateTourPrice, type PriceBreakdown } from "@/lib/pricing";
 import { listAvailableTourSessions, type AvailableTourSession } from "@/lib/scheduling";
 import { isSupportedLocale, DEFAULT_LOCALE } from "@/lib/i18n";
@@ -89,6 +90,13 @@ export interface BookingFormState {
   message?: string;
   bookingId?: string;
   manageToken?: string;
+  /**
+   * Stripe Checkout URL to send the guest to, when a deposit is owed and
+   * Stripe is configured. Absent means "no payment step" -- either the policy
+   * takes nothing up front, or Checkout couldn't be opened; in both cases the
+   * booking still exists and the success message stands on its own.
+   */
+  checkoutUrl?: string;
 }
 
 const BookingSchema = z.object({
@@ -199,6 +207,7 @@ export async function submitTourBooking(_prevState: BookingFormState, formData: 
       message: "Booked! We'll confirm your pickup details shortly.",
       bookingId: result.bookingId,
       manageToken: result.manageToken,
+      checkoutUrl: await openCheckoutForBooking(result),
     };
   } catch (err) {
     console.error("submitTourBooking failed", err);

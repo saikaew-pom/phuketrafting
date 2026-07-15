@@ -12,6 +12,13 @@ export interface CreateBookingResult {
   // crypto.randomUUID() primitive already used for bookingId itself, just a
   // second, independent random value bound to bookings.manage_token.
   manageToken?: string;
+  /**
+   * What the guest owes NOW (plan §4's deposit), as quoted and persisted.
+   * Returned so the caller can open a Checkout session for exactly the amount
+   * that went into D1, rather than recomputing it from a settings row that
+   * could change between the two.
+   */
+  depositAmount?: number;
   reason?: "not_found" | "no_capacity" | "blocked" | "invalid_input";
 }
 
@@ -273,7 +280,7 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
     await runPostCommitEffect(bookingId, "promo_redemption", () => recordPromoRedemption(price.promoApplied!.code));
   }
 
-  return { success: true, bookingId, manageToken };
+  return { success: true, bookingId, manageToken, depositAmount: price.depositAmount };
 }
 
 export interface CreateCampBookingInput {
@@ -392,5 +399,5 @@ export async function createCampBooking(input: CreateCampBookingInput): Promise<
     await runPostCommitEffect(bookingId, "promo_redemption", () => recordPromoRedemption(price.promoApplied!.code));
   }
 
-  return { success: true, bookingId, manageToken };
+  return { success: true, bookingId, manageToken, depositAmount: price.depositAmount };
 }

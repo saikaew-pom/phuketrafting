@@ -622,6 +622,17 @@ select.pr-input {
   font-size: 26px;
   color: var(--accent);
 }
+/* The deposit split (plan §4's "Pay ฿X now, ฿Y on the day"). Sits directly
+   under .pr-bform-total, whose 14px bottom margin already separates it from
+   the Turnstile widget below -- hence the negative top margin, pulling it up
+   against the total it explains rather than floating between the two. */
+.pr-bform-split {
+  margin: -8px 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  text-align: center;
+}
 .pr-bform-foot {
   display: flex;
   gap: 18px;
