@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+import { getPaymentPolicy, type PaymentPolicy } from "@/lib/queries/settings";
 
 /**
  * Pricing depth on top of the raw rate tables (plan §2: "child/seasonal/
@@ -15,6 +16,37 @@ export interface PriceBreakdown {
   transferFee: number;
   total: number;
   promoApplied: { code: string; discountAmount: number } | null;
+  /**
+   * What the guest pays now vs on the day (plan §4's 25/75 split). Always
+   * sums to exactly `total` -- see splitPayment. Part of the breakdown rather
+   * than computed per-caller so the widget preview, the persisted booking row
+   * and the emails cannot disagree, which plan §13's checklist calls out
+   * explicitly: "Deposit math: widget/chatbot/email all show identical
+   * 25%/75% split".
+   */
+  depositAmount: number;
+  balanceAmount: number;
+}
+
+/**
+ * Splits a total into (pay now, pay on the day) per the configured policy.
+ *
+ * `balance` is derived by SUBTRACTION, never by its own rounding: deposit +
+ * balance must equal total exactly, and rounding both halves independently
+ * loses or invents money on any total that doesn't divide cleanly (25% of
+ * ฿3,333 is ฿833.25 -- round both and you get ฿833 + ฿2,500 = ฿3,333 only by
+ * luck). THB is quoted in whole baht throughout this app, so the deposit is
+ * rounded to a whole baht and the balance absorbs the remainder.
+ *
+ * Exported for direct testing and reuse; callers normally get these via
+ * PriceBreakdown.
+ */
+export function splitPayment(total: number, policy: PaymentPolicy): { depositAmount: number; balanceAmount: number } {
+  if (policy.mode === "full_prepay") return { depositAmount: total, balanceAmount: 0 };
+  if (policy.mode === "pay_on_day") return { depositAmount: 0, balanceAmount: total };
+
+  const depositAmount = Math.round(total * policy.depositRate);
+  return { depositAmount, balanceAmount: total - depositAmount };
 }
 
 interface TourRateRow {
@@ -184,12 +216,14 @@ export async function calculateTourPrice(input: TourPriceInput): Promise<PriceBr
     }
   }
 
+  const total = subtotal - discountAmount + transferFee;
   return {
     subtotal,
     discountAmount,
     transferFee,
-    total: subtotal - discountAmount + transferFee,
+    total,
     promoApplied,
+    ...splitPayment(total, await getPaymentPolicy()),
   };
 }
 
@@ -256,7 +290,15 @@ export async function calculateCampPrice(input: CampPriceInput): Promise<PriceBr
     }
   }
 
-  return { subtotal, discountAmount, transferFee: 0, total: subtotal - discountAmount, promoApplied };
+  const total = subtotal - discountAmount;
+  return {
+    subtotal,
+    discountAmount,
+    transferFee: 0,
+    total,
+    promoApplied,
+    ...splitPayment(total, await getPaymentPolicy()),
+  };
 }
 
 /**

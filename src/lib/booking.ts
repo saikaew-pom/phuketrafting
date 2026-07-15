@@ -197,11 +197,12 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
       `INSERT INTO bookings (
          id, type, tour_session_id, adults, children, infants, hotel,
          pickup_zone_id, transfer_fee, addon_choice, subtotal,
-         discount_amount, total, guest_name, guest_email, guest_phone,
+         discount_amount, total, deposit_amount, balance_amount,
+         guest_name, guest_email, guest_phone,
          locale, source, booked_by_agent_id, promo_code_id, consent_marketing,
          manage_token
        )
-       SELECT ?,'tour',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+       SELECT ?,'tour',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
         WHERE EXISTS (
           SELECT 1 FROM tour_sessions WHERE id = ? AND ${guardClause}
         )`
@@ -219,6 +220,12 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
       price.subtotal,
       price.discountAmount,
       price.total,
+      // Persisted rather than recomputed on read: the policy is a mutable
+      // settings row, so recomputing later would silently restate what an
+      // existing guest owes if staff ever change the deposit rate. What was
+      // quoted at booking time is what's owed.
+      price.depositAmount,
+      price.balanceAmount,
       input.guestName.trim(),
       input.guestEmail,
       input.guestPhone,
@@ -362,6 +369,10 @@ export async function createCampBooking(input: CreateCampBookingInput): Promise<
       subtotal: price.subtotal,
       discount_amount: price.discountAmount,
       total: price.total,
+      // See the tour path's identical comment: persisted as quoted, not
+      // recomputed from a settings row that can change later.
+      deposit_amount: price.depositAmount,
+      balance_amount: price.balanceAmount,
       guest_name: input.guestName.trim(),
       guest_email: input.guestEmail,
       guest_phone: input.guestPhone,
