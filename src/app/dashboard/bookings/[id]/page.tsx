@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getBookingDetail, listBookingLogs } from "@/lib/queries/bookings";
+import { listParticipants } from "@/lib/queries/participants";
 import { changeBookingStatus, toggleCheckedIn, saveBookingNotes, notifyGuestEmail, markWhatsAppSent } from "../actions";
 import { baht, formatDateTime } from "@/lib/format";
 import { guestWaLink } from "@/lib/whatsapp";
@@ -12,6 +13,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   if (!booking) notFound();
 
   const logs = await listBookingLogs(id);
+  const participants = await listParticipants(id);
   const changeStatusWithId = changeBookingStatus.bind(null, id);
   const toggleCheckedInWithId = toggleCheckedIn.bind(null, id);
   const saveNotesWithId = saveBookingNotes.bind(null, id);
@@ -41,6 +43,43 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
       {booking.hotel && <p>Hotel: {booking.hotel}</p>}
       {booking.pickup_zone_name && <p>Pickup: {booking.pickup_zone_name}</p>}
       {booking.addon_choice && <p>Add-on: {booking.addon_choice}</p>}
+
+      <h2>Waivers</h2>
+      {/* Read-only on purpose: a waiver is the participant's own signed legal
+          declaration (plan §7), so staff seeing it is right but staff editing
+          it would defeat the point of collecting it. Guests sign/correct via
+          their manage-booking link. */}
+      <p>
+        {participants.length === 0
+          ? "No participant waivers signed yet."
+          : `${participants.filter((p) => p.waiver_signed_at !== null).length} of ${
+              booking.adults + booking.children + booking.infants
+            } participants have signed.`}
+      </p>
+      {participants.length > 0 && (
+        <table style={{ borderCollapse: "collapse", width: "100%" }}>
+          <thead>
+            <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
+              <th style={{ padding: "8px" }}>Name</th>
+              <th style={{ padding: "8px" }}>Age</th>
+              <th style={{ padding: "8px" }}>Health declaration</th>
+              <th style={{ padding: "8px" }}>Signed</th>
+              <th style={{ padding: "8px" }}>Signature</th>
+            </tr>
+          </thead>
+          <tbody>
+            {participants.map((p) => (
+              <tr key={p.id} style={{ borderBottom: "1px solid #eee" }}>
+                <td style={{ padding: "8px" }}>{p.name}</td>
+                <td style={{ padding: "8px" }}>{p.age ?? "—"}</td>
+                <td style={{ padding: "8px" }}>{p.health_declaration || "None declared"}</td>
+                <td style={{ padding: "8px" }}>{p.waiver_signed_at ? formatDateTime(p.waiver_signed_at) : "—"}</td>
+                <td style={{ padding: "8px" }}>{p.signature_text ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
       <h2>Contact</h2>
       <p>Email: {booking.guest_email ?? "—"}</p>

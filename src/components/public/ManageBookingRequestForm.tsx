@@ -7,7 +7,11 @@ import { requestBookingChange, type ManageRequestFormState } from "@/app/[lang]/
 
 declare global {
   interface Window {
-    turnstile?: { reset: (widgetId?: string) => void };
+    // Cloudflare's reset() takes an optional widget id, a container element,
+    // or a container selector. The element overload is what lets a page with
+    // more than one widget (this one -- this form plus WaiverForm) reset a
+    // specific widget instead of whichever one reset() picks by default.
+    turnstile?: { reset: (widget?: string | HTMLElement) => void };
   }
 }
 
@@ -54,10 +58,18 @@ export function ManageBookingRequestForm({ manageToken }: { manageToken: string 
   }, [state, requestType]);
 
   // Same stale-token reset as EnquiryForm.tsx -- Turnstile tokens are
-  // single-use, so a rejected submission must reset the widget before retry.
+  // single-use, so a rejected submission must reset the widget before retry --
+  // but scoped to THIS form's container. EnquiryForm's bare reset() is safe
+  // only because it is the sole widget on its page; this page now renders a
+  // second one (WaiverForm), and a no-argument reset() resets a single
+  // last-rendered widget rather than all of them. That happens to be this
+  // form's widget today purely because it sits below WaiverForm in the DOM --
+  // correct by accident, and silently wrong if the sections are ever
+  // reordered. Passing the container makes it correct by construction.
+  const turnstileRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (state.status === "error") {
-      window.turnstile?.reset();
+    if (state.status === "error" && turnstileRef.current) {
+      window.turnstile?.reset(turnstileRef.current);
     }
   }, [state]);
 
@@ -114,7 +126,7 @@ export function ManageBookingRequestForm({ manageToken }: { manageToken: string 
             />
           </label>
 
-          {TURNSTILE_SITE_KEY && <div className="cf-turnstile" data-sitekey={TURNSTILE_SITE_KEY} />}
+          {TURNSTILE_SITE_KEY && <div ref={turnstileRef} className="cf-turnstile" data-sitekey={TURNSTILE_SITE_KEY} />}
 
           <button className="pr-btn pr-btn-accent pr-btn-block" type="submit" disabled={pending}>
             <Send size={17} className="pr-ico" /> {pending ? "Sending..." : "Send request"}

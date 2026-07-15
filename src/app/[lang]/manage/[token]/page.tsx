@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getBookingByManageToken } from "@/lib/queries/bookings";
+import { listParticipants } from "@/lib/queries/participants";
 import { baht } from "@/lib/format";
 import { waLink } from "@/lib/whatsapp";
 import { ManageBookingRequestForm } from "@/components/public/ManageBookingRequestForm";
+import { WaiverForm, type WaiverRow } from "@/components/public/WaiverForm";
 
 // Same fix as privacy/terms/waiver -- this page also renders through
 // [lang]/layout.tsx's Footer (listTours() -> getCloudflareContext()), which
@@ -25,10 +27,12 @@ const STATUS_LABEL: Record<string, string> = {
   no_show: "No-show",
 };
 
-export default async function ManageBookingPage({ params }: { params: Promise<{ token: string }> }) {
-  const { token } = await params;
+export default async function ManageBookingPage({ params }: { params: Promise<{ lang: string; token: string }> }) {
+  const { lang, token } = await params;
   const booking = await getBookingByManageToken(token);
   if (!booking) notFound();
+
+  const participants = await listParticipants(booking.id);
 
   const guestCount = [
     booking.adults ? `${booking.adults} adult${booking.adults === 1 ? "" : "s"}` : null,
@@ -39,6 +43,28 @@ export default async function ManageBookingPage({ params }: { params: Promise<{ 
     .join(", ");
 
   const canRequestChange = booking.status === "pending" || booking.status === "confirmed";
+
+  // Everyone physically on the trip needs their own waiver, infants included
+  // -- plan §7's "the booker's checkbox alone doesn't cover companions", and
+  // §7 again on minors ("a parent or legal guardian must review and sign this
+  // waiver on behalf of any participant under 18"). This is deliberately NOT
+  // the capacity headcount (adults + children, which excludes infants because
+  // they don't consume a seat) -- a seat and a liability waiver are different
+  // things, and an infant on the raft needs the latter regardless.
+  const participantCount = booking.adults + booking.children + booking.infants;
+  const canSignWaivers = booking.status !== "cancelled" && booking.status !== "no_show";
+  const signedCount = participants.filter((p) => p.waiver_signed_at !== null).length;
+
+  // Prefill from what's already on file so a guest correcting one typo isn't
+  // made to retype the whole family; falls back to empty rows for a booking
+  // with no waivers yet. replaceParticipants is a replace-all, so the form
+  // must always render the complete set, not just the missing ones.
+  const initialRows: WaiverRow[] = Array.from({ length: participantCount }, (_, i) => ({
+    name: participants[i]?.name ?? "",
+    age: participants[i]?.age?.toString() ?? "",
+    health: participants[i]?.health_declaration ?? "",
+    signature: participants[i]?.signature_text ?? "",
+  }));
 
   return (
     <article className="pr-legal">
@@ -86,6 +112,28 @@ export default async function ManageBookingPage({ params }: { params: Promise<{ 
           {booking.guest_email && <> -- {booking.guest_email}</>}
           {booking.guest_phone && <> -- {booking.guest_phone}</>}
         </p>
+
+        <h2>Waivers</h2>
+        {canSignWaivers ? (
+          <>
+            <p>
+              {signedCount === 0
+                ? `Every participant needs their own signed waiver before departure -- ${participantCount} to complete.`
+                : signedCount < participantCount
+                  ? `${signedCount} of ${participantCount} waivers signed. Please complete the rest before departure.`
+                  : `All ${participantCount} waivers are signed and on file. You can update them below if anything changes.`}
+            </p>
+            <WaiverForm
+              manageToken={token}
+              lang={lang}
+              participantCount={participantCount}
+              initialRows={initialRows}
+              waiverHref={`/${lang}/waiver`}
+            />
+          </>
+        ) : (
+          <p>This booking is no longer active, so waivers can&apos;t be signed here.</p>
+        )}
 
         <h2>Cancellation &amp; reschedule policy</h2>
         {/* 72h window is a proposed value pending client sign-off (plan §14,

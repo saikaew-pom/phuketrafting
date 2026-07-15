@@ -72,7 +72,8 @@ export default async function DaySheetPage({
                   <th style={{ padding: "6px" }}>Pickup zone</th>
                   <th style={{ padding: "6px" }}>Hotel</th>
                   <th style={{ padding: "6px" }}>Phone</th>
-                  <th style={{ padding: "6px" }}>Waiver</th>
+                  <th style={{ padding: "6px" }}>Consent</th>
+                  <th style={{ padding: "6px" }}>Waivers</th>
                   <th style={{ padding: "6px" }}>Notes</th>
                   <th style={{ padding: "6px" }} className="no-print">
                     Checked in
@@ -88,6 +89,18 @@ export default async function DaySheetPage({
                     <td style={{ padding: "6px" }}>{b.hotel ?? "—"}</td>
                     <td style={{ padding: "6px" }}>{b.guest_phone ?? "—"}</td>
                     <td style={{ padding: "6px" }}>{b.waiver_acknowledged ? "Yes" : "No"}</td>
+                    {/* Bold the incomplete case: this is the column crew scan
+                        down each morning to catch who still needs to sign
+                        before departure (plan §7), so "not all signed" has to
+                        be the thing that catches the eye, not blend in. */}
+                    <td
+                      style={{
+                        padding: "6px",
+                        fontWeight: b.signed_waivers < totalGuests(b.adults, b.children, b.infants) ? "bold" : "normal",
+                      }}
+                    >
+                      {b.signed_waivers} / {totalGuests(b.adults, b.children, b.infants)}
+                    </td>
                     <td style={{ padding: "6px" }}>{b.notes ?? ""}</td>
                     <td style={{ padding: "6px" }} className="no-print">
                       <form action={toggleCheckedIn.bind(null, b.id)}>

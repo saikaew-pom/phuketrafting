@@ -223,7 +223,12 @@ export interface DaySheetTourBooking {
   infants: number;
   hotel: string | null;
   checked_in: number;
+  // The BOOKER's own at-booking consent checkbox -- NOT whether every
+  // participant has signed (that's signed_waivers below). Migration 0005's
+  // own comment is explicit that these are different facts; the day-sheet
+  // shows both because crew need to know both.
   waiver_acknowledged: number;
+  signed_waivers: number;
   notes: string | null;
   pickup_zone_name: string | null;
 }
@@ -291,8 +296,14 @@ export async function getDaySheet(date: string): Promise<DaySheet> {
       .all<Omit<DaySheetSession, "bookings">>(),
     db
       .prepare(
+        // signed_waivers as a correlated subquery rather than a second round
+        // trip per booking -- keeps this at the same fixed query count no
+        // matter how large a session's roster gets, same anti-N+1 stance as
+        // the group-in-JS Map below.
         `SELECT b.id, b.tour_session_id, b.guest_name, b.guest_phone, b.adults, b.children, b.infants,
-                b.hotel, b.checked_in, b.waiver_acknowledged, b.notes, pz.name AS pickup_zone_name
+                b.hotel, b.checked_in, b.waiver_acknowledged, b.notes, pz.name AS pickup_zone_name,
+                (SELECT COUNT(*) FROM booking_participants bp
+                  WHERE bp.booking_id = b.id AND bp.waiver_signed_at IS NOT NULL) AS signed_waivers
            FROM bookings b
            JOIN tour_sessions ts ON b.tour_session_id = ts.id
            LEFT JOIN pickup_zones pz ON b.pickup_zone_id = pz.id

@@ -16,7 +16,12 @@ import type { PickupZone } from "@/lib/queries/pickup";
 
 declare global {
   interface Window {
-    turnstile?: { reset: (widgetId?: string) => void };
+    // Widened from (widgetId?: string) to also accept a container element:
+    // TypeScript requires every `declare global` copy of this interface to
+    // agree, and the two forms on the manage page must reset by container
+    // (see ManageBookingRequestForm.tsx). This form is the sole widget on its
+    // page, so its own bare reset() stays correct.
+    turnstile?: { reset: (widget?: string | HTMLElement) => void };
   }
 }
 
