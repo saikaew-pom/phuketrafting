@@ -167,6 +167,25 @@ export async function updateBookingNotes(id: string, notes: string): Promise<boo
   return result.meta.changes > 0;
 }
 
+export async function recordEmailNotification(id: string, status: "sent" | "failed" | "not_configured"): Promise<boolean> {
+  const result = await getDb()
+    .prepare("UPDATE bookings SET last_email_sent_at = unixepoch(), last_email_status = ?1, updated_at = unixepoch() WHERE id = ?2")
+    .bind(status, id)
+    .run();
+  return result.meta.changes > 0;
+}
+
+// "sent_manually" -- WhatsApp has no automated sender yet (Twilio is
+// Phase 8), so this just records that a staff member clicked through and
+// says they sent it, not a real delivery confirmation.
+export async function recordWhatsAppNotification(id: string): Promise<boolean> {
+  const result = await getDb()
+    .prepare("UPDATE bookings SET last_whatsapp_sent_at = unixepoch(), last_whatsapp_status = 'sent_manually', updated_at = unixepoch() WHERE id = ?1")
+    .bind(id)
+    .run();
+  return result.meta.changes > 0;
+}
+
 const ACTIVE_STATUSES = ["pending", "confirmed"] as const;
 
 export interface DaySheetTourBooking {

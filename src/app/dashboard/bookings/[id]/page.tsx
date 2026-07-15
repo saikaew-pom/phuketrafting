@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { getBookingDetail, listBookingLogs } from "@/lib/queries/bookings";
-import { changeBookingStatus, toggleCheckedIn, saveBookingNotes } from "../actions";
+import { changeBookingStatus, toggleCheckedIn, saveBookingNotes, notifyGuestEmail, markWhatsAppSent } from "../actions";
 import { baht, formatDateTime } from "@/lib/format";
+import { guestWaLink } from "@/lib/whatsapp";
 
 const STATUSES = ["pending", "confirmed", "completed", "cancelled", "no_show"] as const;
 
@@ -14,6 +15,11 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   const changeStatusWithId = changeBookingStatus.bind(null, id);
   const toggleCheckedInWithId = toggleCheckedIn.bind(null, id);
   const saveNotesWithId = saveBookingNotes.bind(null, id);
+  const notifyEmailWithId = notifyGuestEmail.bind(null, id);
+  const markWhatsAppSentWithId = markWhatsAppSent.bind(null, id);
+  const whatsAppMessage = `Hi ${booking.guest_name}, this is Phuket Rafting confirming we've received your booking for ${
+    booking.product_name ?? "your trip"
+  } on ${booking.date ?? ""}. We'll follow up with pickup details soon!`;
 
   return (
     <div>
@@ -87,6 +93,39 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           Save notes
         </button>
       </form>
+
+      <h2>Notifications</h2>
+      <p>
+        Email:{" "}
+        {booking.last_email_status
+          ? `${booking.last_email_status} (${formatDateTime(booking.last_email_sent_at!)})`
+          : "Not yet sent"}
+      </p>
+      <form action={notifyEmailWithId} style={{ marginBottom: "12px" }}>
+        <button type="submit" disabled={!booking.guest_email}>
+          Send booking confirmation email
+        </button>
+        {!booking.guest_email && <span> (no email on file)</span>}
+      </form>
+
+      <p>
+        WhatsApp:{" "}
+        {booking.last_whatsapp_status
+          ? `${booking.last_whatsapp_status} (${formatDateTime(booking.last_whatsapp_sent_at!)})`
+          : "Not yet sent"}
+      </p>
+      {booking.guest_phone ? (
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <a href={guestWaLink(booking.guest_phone, whatsAppMessage)} target="_blank" rel="noreferrer">
+            Message on WhatsApp
+          </a>
+          <form action={markWhatsAppSentWithId}>
+            <button type="submit">Mark as sent</button>
+          </form>
+        </div>
+      ) : (
+        <p>No phone on file.</p>
+      )}
 
       <h2>Activity log</h2>
       {logs.length === 0 ? (
