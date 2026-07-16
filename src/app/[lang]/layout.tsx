@@ -4,6 +4,8 @@ import { DEFAULT_LOCALE, isSupportedLocale } from "@/lib/i18n";
 import { Nav } from "@/components/public/Nav";
 import { Footer } from "@/components/public/Footer";
 import { ConsentBanner } from "@/components/public/ConsentBanner";
+import { ChatWidget } from "@/components/public/ChatWidget";
+import { getChatPolicy } from "@/lib/queries/settings";
 import { Analytics } from "@/components/public/Analytics";
 
 const sora = Sora({
@@ -36,6 +38,8 @@ export default async function LangLayout({
   const { lang } = await params;
   if (!isSupportedLocale(lang)) notFound();
 
+  const chat = await getChatPolicy();
+
   return (
     <div className={`pr-app ${sora.variable} ${plusJakartaSans.variable}`}>
       <Analytics />
@@ -43,6 +47,11 @@ export default async function LangLayout({
       {children}
       <Footer locale={lang} />
       <ConsentBanner locale={lang} />
+      {/* Server-side gate: staff turning the chatbot off must ship NO widget,
+          not a launcher that fails on click. Plan §9's master toggle. */}
+      {chat.enabled && (
+        <ChatWidget greeting="Hi! Ask me about tours, prices, pickup or what to bring. I'm an assistant -- our team confirms every booking." />
+      )}
     </div>
   );
 }
