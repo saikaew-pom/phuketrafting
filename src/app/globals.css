@@ -1785,6 +1785,114 @@ select.pr-input {
   }
 }
 
+/* ---- Blog (plan §3/§10) ---- */
+.pr-blog-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+  margin: 32px 0 48px;
+}
+.pr-blog-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: 0.22s ease;
+  box-shadow: var(--shadow-sm);
+}
+.pr-blog-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--line-2);
+}
+.pr-blog-card-media {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+}
+.pr-blog-card-media img {
+  object-fit: cover;
+}
+.pr-blog-card-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pr-blog-card-body h3 {
+  font-size: 18px;
+}
+.pr-blog-card-body p {
+  color: var(--ink-2);
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.pr-blog-card-category {
+  display: inline-block;
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.pr-blog-card-date {
+  color: var(--ink-3);
+  font-size: 13px;
+}
+.pr-blog-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 40px;
+  list-style: none;
+}
+.pr-blog-categories a {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.pr-blog-categories a:hover,
+.pr-blog-category-active {
+  border-color: var(--accent);
+  color: var(--accent) !important;
+}
+.pr-blog-hero {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin: 8px 0 32px;
+}
+.pr-blog-hero img {
+  object-fit: cover;
+}
+.pr-blog-siblings {
+  margin: 0 0 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pr-blog-siblings a {
+  color: var(--accent);
+  font-weight: 600;
+}
+@media (max-width: 980px) {
+  .pr-blog-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .pr-blog-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---- Chat widget (plan §9) ------------------------------------------------
    Sits ABOVE .pr-sticky, which is fixed to the bottom edge at z-index 70 and
    spans the full width -- so the launcher is offset by the sticky bar's own

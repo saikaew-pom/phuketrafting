@@ -39,6 +39,7 @@ export async function Footer({ locale }: { locale: string }) {
           <a href="#why">Why choose us</a>
           <a href="#reviews">Reviews</a>
           <a href="#faq">FAQ</a>
+          <Link href={`/${locale}/blog`}>Blog</Link>
         </div>
         <div className="pr-footer-col">
           <h4>Contact</h4>
