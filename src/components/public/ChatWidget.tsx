@@ -3,10 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { MessageCircle, X, Send } from "lucide-react";
 import { ChatMessageBody } from "./ChatMessage";
+import { ChatBookingCard, type BookingDraft } from "./ChatBookingCard";
 
 interface Turn {
   role: "guest" | "bot";
   text: string;
+  /** Present on the turn where the bot proposed a booking -- renders the card. */
+  draft?: BookingDraft;
 }
 
 const SESSION_KEY = "pr-chat-session";
@@ -44,6 +47,9 @@ export function ChatWidget({ greeting }: { greeting: string }) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [turns, pending]);
 
+  // The newest turn that carries a draft. Everything older is display-only.
+  const lastDraftIndex = turns.reduce((acc, t, i) => (t.draft ? i : acc), -1);
+
   async function send() {
     const message = input.trim();
     // `pending` guards a double-send: each turn costs real tokens, so a
@@ -61,7 +67,7 @@ export function ChatWidget({ greeting }: { greeting: string }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ sessionId: sessionIdRef.current, message }),
       });
-      const data = (await res.json()) as { reply?: string | null; error?: string; staffHandling?: boolean };
+      const data = (await res.json()) as { reply?: string | null; error?: string; staffHandling?: boolean; draft?: BookingDraft };
 
       if (!res.ok) {
         // 429 and validation errors arrive here. Shown as an error line rather
@@ -74,7 +80,7 @@ export function ChatWidget({ greeting }: { greeting: string }) {
         setTurns((t) => [...t, { role: "bot", text: "Our team is reading this thread and will reply here shortly." }]);
         return;
       }
-      if (data.reply) setTurns((t) => [...t, { role: "bot", text: data.reply! }]);
+      if (data.reply) setTurns((t) => [...t, { role: "bot", text: data.reply!, draft: data.draft }]);
     } catch {
       // A network failure is ours, not the bot's -- same reasoning as above.
       setError("Couldn't reach us just now -- please check your connection and try again.");
@@ -111,6 +117,15 @@ export function ChatWidget({ greeting }: { greeting: string }) {
                 rather than HTML; see that file on why this is a security
                 boundary and not just formatting. */}
             {t.role === "guest" ? <p>{t.text}</p> : <ChatMessageBody text={t.text} />}
+            {/* Only the LAST draft is interactive: an older card's token has
+                been retired server-side (one draft slot), so leaving earlier
+                cards pressable would invite a confirm that can only fail. */}
+            {t.draft && i === lastDraftIndex && (
+              <ChatBookingCard
+                draft={t.draft}
+                onConfirmed={(msg) => setTurns((prev) => [...prev, { role: "bot", text: msg }])}
+              />
+            )}
           </div>
         ))}
         {pending && (

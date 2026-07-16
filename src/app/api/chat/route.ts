@@ -10,6 +10,8 @@ import {
   countGuestMessages,
 } from "@/lib/queries/conversations";
 import { getChatPolicy } from "@/lib/queries/settings";
+import { BOOKING_TOOLS, runBookingTool, type DraftSummary } from "@/lib/chat/booking-tools";
+import type { AiMessage } from "@/lib/ai";
 import { getChatSpend, addChatTokens } from "@/lib/queries/chat-spend";
 import { WHATSAPP_NUMBER } from "@/lib/whatsapp";
 
@@ -45,6 +47,10 @@ const HISTORY_WINDOW = 12;
 // Bounds one message's input tokens. Zod enforces it server-side; the widget's
 // maxLength is only advisory.
 const MAX_INPUT_CHARS = 1000;
+// The booking flow needs 2 (list_availability -> prepare_booking); 4 leaves
+// room for a correction ("actually make it 3 people") without letting a
+// confused model bill us indefinitely.
+const MAX_TOOL_ROUNDS = 4;
 
 const ChatSchema = z.object({
   sessionId: z.string().trim().uuid("Invalid session"),
@@ -126,6 +132,17 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "You're sending messages very quickly -- please wait a moment." }, { status: 429 });
   }
 
+  // Declared OUT here, not inside the try, so the finally can still bill what
+  // was actually spent when a later round throws. aiComplete throws on an API
+  // failure or timeout, and the multi-round booking flow is exactly where that
+  // is most likely (more calls, longer calls) -- so the old shape leaked
+  // precisely the turns that cost the most: round 1's tokens were real money
+  // MiniMax had already billed, and the outer catch dropped them on the floor.
+  // Since the daily cap is the only thing standing between a runaway model and
+  // the bill, spend that never gets recorded is spend the cap cannot see.
+  let totalIn = 0;
+  let totalOut = 0;
+
   try {
     // sessionId is client-supplied, so it identifies a thread but authorizes
     // nothing: a guessed id can only reach another guest's CHAT thread, which
@@ -173,11 +190,18 @@ export async function POST(request: Request): Promise<Response> {
     await appendMessage(conversation.id, "guest", message);
 
     const history = await listRecentMessages(conversation.id, HISTORY_WINDOW);
-    const system = await buildSystemPrompt();
+    const system = await buildSystemPrompt(new Date(), policy.bookingMode);
+
+    // Tools only exist when booking mode is on (plan §9: booking mode behind
+    // its own toggle). With it off the model literally cannot propose a
+    // booking -- there's no tool to call -- rather than being merely asked not
+    // to, which a prompt can't guarantee.
+    const tools = policy.bookingMode ? BOOKING_TOOLS : undefined;
 
     const reply = await aiComplete(
       {
         system,
+        tools,
         // 'staff' turns are folded in as assistant text: from the guest's
         // side a human takeover reads as the same conversation, and the model
         // needs that context to not repeat what staff already said.
@@ -195,30 +219,101 @@ export async function POST(request: Request): Promise<Response> {
       return Response.json({ reply: FALLBACK, degraded: true });
     }
 
-    const text = finalizeReply(reply.text, reply.stopReason);
-    await appendMessage(conversation.id, "bot", text);
+    // The tool loop.
+    //
+    // BOUNDED, not single-round. The natural booking flow is genuinely two
+    // calls -- list_availability to find real dates, THEN prepare_booking --
+    // and a single round left the model mid-sequence with no text at all, so
+    // the guest silently got the WhatsApp fallback instead of a booking card
+    // (observed live before this was a loop).
+    //
+    // But it is NOT an open-ended agent loop either: every round is another
+    // billed call, and a model that keeps calling tools forever is a runaway
+    // bill. MAX_TOOL_ROUNDS caps it; hitting the cap is a bug worth seeing in
+    // the logs, not something to paper over.
+    let draft: DraftSummary | undefined;
+    let finalReply = reply;
+    totalIn = reply.inputTokens;
+    totalOut = reply.outputTokens;
 
-    // Recorded AFTER the call, from the model's own reported usage rather than
-    // an estimate -- these are the tokens actually billed. Never throws into
-    // the guest's reply: losing one turn's accounting is far better than
-    // failing a reply the guest already paid for in latency. The cap self-heals
-    // on the next turn.
-    try {
-      await addChatTokens(reply.inputTokens + reply.outputTokens);
-    } catch (err) {
-      console.error("chat: failed to record token spend", err);
+    // Grows as the model and tools take turns. Seeded with the real history.
+    const convo: AiMessage[] = history.map((m) => ({
+      role: m.sender === "guest" ? ("user" as const) : ("assistant" as const),
+      content: m.content,
+    }));
+
+    for (let round = 0; round < MAX_TOOL_ROUNDS && finalReply.toolCalls.length > 0; round++) {
+      const results = await Promise.all(
+        finalReply.toolCalls.map(async (call) => {
+          const out = await runBookingTool(call.name, call.input, conversation.id);
+          // Last one wins: a second prepare_booking in the same turn retires
+          // the first server-side anyway (one draft slot), so the newest draft
+          // is the only one whose token still works.
+          if (out.draft) draft = out.draft;
+          return { call, out };
+        })
+      );
+
+      // The assistant's tool_use turn must be replayed VERBATIM -- a
+      // tool_result has to attach to the exact tool_use block that asked for
+      // it, so this can't be reconstructed from text.
+      convo.push({ role: "assistant", content: finalReply.raw });
+      convo.push({
+        role: "user",
+        content: results.map(({ call, out }) => ({
+          type: "tool_result" as const,
+          tool_use_id: call.id,
+          content: out.content,
+        })),
+      });
+
+      const next = await aiComplete({ system, tools, messages: convo }, env);
+      if (!next) break;
+      finalReply = next;
+      totalIn += next.inputTokens;
+      totalOut += next.outputTokens;
     }
+
+    if (finalReply.toolCalls.length > 0) {
+      // Still asking for tools after the cap. finalizeReply will fall back to
+      // WhatsApp (there's no text), which is the right guest outcome -- but
+      // log it loudly, because it means the model is stuck in a loop and
+      // every round of it was billed.
+      console.error(`chat: model still calling tools after ${MAX_TOOL_ROUNDS} rounds -- giving up`);
+    }
+
+    const text = finalizeReply(finalReply.text, finalReply.stopReason);
+    await appendMessage(conversation.id, "bot", text);
 
     // Per plan §9's "model/token usage logged per conversation".
     console.log(
-      `chat ${conversation.id}: in=${reply.inputTokens} out=${reply.outputTokens} stop=${reply.stopReason}`
+      `chat ${conversation.id}: in=${totalIn} out=${totalOut} stop=${finalReply.stopReason}${draft ? " DRAFT" : ""}`
     );
 
-    return Response.json({ reply: text });
+    // `draft` is what makes the review card appear. It carries only
+    // server-computed values (see booking-tools.ts) -- the model never
+    // supplies a price.
+    return Response.json({ reply: text, draft });
   } catch (err) {
     // Degrade, never 500 at a guest: plan §8 requires these fail open. The
     // guest's message is already recorded above, so staff can still pick it up.
     console.error("chat failed", err);
     return Response.json({ reply: FALLBACK, degraded: true });
+  } finally {
+    // Recorded from the model's own reported usage rather than an estimate --
+    // these are the tokens actually billed. In a `finally` so a throw part-way
+    // through the tool loop still bills the rounds that already completed:
+    // MiniMax charged for them whether or not round 3 timed out.
+    //
+    // Never throws into the guest's reply: losing one turn's accounting is far
+    // better than failing a reply the guest already paid for in latency. The
+    // cap self-heals on the next turn.
+    if (totalIn + totalOut > 0) {
+      try {
+        await addChatTokens(totalIn + totalOut);
+      } catch (err) {
+        console.error("chat: failed to record token spend", err);
+      }
+    }
   }
 }

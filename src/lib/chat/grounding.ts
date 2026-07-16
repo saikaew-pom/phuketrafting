@@ -22,6 +22,31 @@ import { WHATSAPP_NUMBER } from "@/lib/whatsapp";
  * on tokens anyway.
  */
 
+/**
+ * Appended when staff have booking mode ON. Note what these rules do NOT do:
+ * they don't make the model trustworthy. The real guarantees are structural --
+ * the model has no tool that books anything, prices are computed server-side,
+ * and only the guest's Confirm press creates a booking (see
+ * lib/chat/booking-tools.ts). These rules only stop the bot from CONFUSING the
+ * guest about what's happening.
+ */
+const BOOKING_MODE_RULES = `
+
+## Booking (enabled)
+You can help a guest start a booking, but you CANNOT book anything yourself.
+1. Never propose a date you haven't seen from list_availability. You have no other source of availability.
+2. Once the guest has picked a tour, a real date, and guest numbers, call prepare_booking. It shows them a card.
+3. NEVER ask for their name, phone or email -- the card collects those. Asking, or guessing them, is wrong.
+4. NEVER state a total you calculated yourself. The card shows the real price; let it.
+5. After prepare_booking, say only: check the card and press Confirm. It is a REQUEST -- staff confirm every booking by hand, and nothing is charged when they press it.
+6. Never promise a discount or apply a promo code. You cannot.`;
+
+/** Appended when booking mode is OFF -- the launch default (plan §9). */
+const NO_BOOKING_RULES = `
+
+## Booking (disabled)
+You cannot take bookings. Point guests at the booking form on this page, or WhatsApp.`;
+
 /** Asia/Bangkok, matching where the trips actually run. */
 function todayInThailand(now: Date): string {
   return new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -38,7 +63,7 @@ function safeParseIncludes(json: string): string[] {
   }
 }
 
-export async function buildSystemPrompt(now: Date = new Date()): Promise<string> {
+export async function buildSystemPrompt(now: Date = new Date(), bookingMode = false): Promise<string> {
   const [tours, pickupZones, campZones, policy] = await Promise.all([
     listTours(),
     listPickupZones(),
@@ -56,7 +81,7 @@ export async function buildSystemPrompt(now: Date = new Date()): Promise<string>
         .join(", ");
       const free = rates.filter((r) => r.price === 0).map((r) => r.label ?? `under ${r.min_age + 1}`);
       return [
-        `- ${t.name}${t.tagline ? ` (${t.tagline})` : ""}`,
+        `- ${t.name} [id: ${t.id}]${t.tagline ? ` (${t.tagline})` : ""}`,
         `  price: ${priced || "ask staff"}${free.length ? ` | free: ${free.join(", ")}` : ""}`,
         `  ${[t.distance_km ? `${t.distance_km} km` : null, t.duration_label].filter(Boolean).join(', ') || 'details on request'}`,
         `  includes: ${safeParseIncludes(t.includes).join(", ") || "ask staff"}`,
@@ -69,7 +94,7 @@ export async function buildSystemPrompt(now: Date = new Date()): Promise<string>
 
   // listPickupZones already filters is_active at the query, so no filter here.
   const pickupLines = pickupZones
-    .map((z) => `- ${z.name}: ${z.fee > 0 ? `THB ${z.fee}` : "free"}${z.earliest_pickup_time ? `, from ${z.earliest_pickup_time}` : ""}`);
+    .map((z) => `- ${z.name} [id: ${z.id}]: ${z.fee > 0 ? `THB ${z.fee}` : "free"}${z.earliest_pickup_time ? `, from ${z.earliest_pickup_time}` : ""}`);
 
   const campLines = campZones
     .filter((z) => z.is_active === 1)
@@ -101,6 +126,8 @@ Short, warm, concrete. Two or three sentences unless asked for detail, and NEVER
 ## FACTS (live from our database)
 
 ### Tours
+The [id: ...] on each line is what the booking tools require. Use it EXACTLY as
+written -- never guess or shorten an id.
 ${tourLines.join("\n") || "(none configured)"}
 
 ### Pickup zones
@@ -114,5 +141,6 @@ ${paymentLine}
 Free cancellation or reschedule up to ${policy.cancellationWindowHours} hours before departure. If we cancel for weather or safety, guests always get a full refund or a free reschedule.
 
 ### Contact
-WhatsApp: https://wa.me/${WHATSAPP_NUMBER}`;
+WhatsApp: https://wa.me/${WHATSAPP_NUMBER}
+${bookingMode ? BOOKING_MODE_RULES : NO_BOOKING_RULES}`;
 }

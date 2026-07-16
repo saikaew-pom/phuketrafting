@@ -1936,3 +1936,49 @@ select.pr-input {
   opacity: 0.4;
   cursor: default;
 }
+
+/* The chatbot's booking review card (plan §9's prepare -> card -> confirm). */
+.pr-chat-card {
+  align-self: stretch;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+}
+.pr-chat-card-title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  margin: 0;
+}
+.pr-chat-card-meta,
+.pr-chat-card-price {
+  margin: 0;
+  color: var(--ink-2);
+}
+.pr-chat-card-price strong {
+  color: var(--accent);
+  font-size: 17px;
+}
+.pr-chat-card-split {
+  font-size: 13px;
+}
+.pr-chat-card form {
+  display: grid;
+  gap: 6px;
+}
+.pr-chat-card-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-3);
+  text-align: center;
+}
+.pr-chat-card-done {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--green);
+  font-weight: 600;
+}

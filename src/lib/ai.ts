@@ -79,6 +79,10 @@ export function extractText(content: Anthropic.ContentBlock[]): string {
 
 export type AiToolCall = { id: string; name: string; input: unknown };
 
+/** Re-exported so tool definitions and the tool loop don't import the SDK. */
+export type AiTool = Anthropic.Tool;
+export type AiMessage = Anthropic.MessageParam;
+
 export function extractToolCalls(content: Anthropic.ContentBlock[]): AiToolCall[] {
   return content
     .filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use")
@@ -88,6 +92,16 @@ export function extractToolCalls(content: Anthropic.ContentBlock[]): AiToolCall[
 export interface AiReply {
   text: string;
   toolCalls: AiToolCall[];
+  /**
+   * The model's own content blocks, verbatim.
+   *
+   * Needed to replay the assistant's tool_use turn back to it: a tool_result
+   * must attach to the exact tool_use block that requested it, so the turn
+   * cannot be reconstructed from `text` alone. Callers pass this straight back
+   * as an assistant message and never render it -- it still contains thinking
+   * blocks, which extractText exists to keep away from guests.
+   */
+  raw: Anthropic.ContentBlock[];
   inputTokens: number;
   outputTokens: number;
   stopReason: string | null;
@@ -134,6 +148,7 @@ export async function aiComplete(request: AiRequest, config: AiConfig): Promise<
   return {
     text: extractText(message.content),
     toolCalls: extractToolCalls(message.content),
+    raw: message.content,
     inputTokens: message.usage.input_tokens,
     outputTokens: message.usage.output_tokens,
     stopReason: message.stop_reason,
