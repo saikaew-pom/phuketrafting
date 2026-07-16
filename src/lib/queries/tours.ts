@@ -28,6 +28,23 @@ export interface TourRate {
   counts_toward_capacity: number;
 }
 
+/**
+ * tours.includes is a TEXT column holding a JSON string array. saveTour()
+ * can only ever write a valid array (it JSON.stringifies a filtered string
+ * list), but a hand-edited D1 row must degrade to "no bullets", not crash
+ * the consumer -- confirmed live: an unguarded JSON.parse of a corrupted
+ * row 500s the whole public Landing page. Both the dashboard editor and
+ * the Landing page parse through this one guard.
+ */
+export function parseIncludes(json: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(json);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function listTours(): Promise<Tour[]> {
   const { results } = await getDb()
     .prepare("SELECT * FROM tours ORDER BY sort_order, name")
@@ -54,6 +71,14 @@ export interface TourUpdate {
   badge: string;
   is_active: boolean;
   cover_image_id: string;
+  /** null = staff cleared the field, which is a valid state for both. */
+  distance_km: number | null;
+  duration_label: string;
+  min_group: number | null;
+  max_group: number | null;
+  /** Already JSON-stringified by the caller -- the column is TEXT holding a JSON array. */
+  includes: string;
+  sort_order: number;
 }
 
 export async function updateTour(id: string, update: TourUpdate): Promise<void> {
@@ -61,8 +86,10 @@ export async function updateTour(id: string, update: TourUpdate): Promise<void> 
     .prepare(
       `UPDATE tours
           SET name = ?1, tagline = ?2, description = ?3, badge = ?4,
-              is_active = ?5, cover_image_id = ?6, updated_at = unixepoch()
-        WHERE id = ?7`
+              is_active = ?5, cover_image_id = ?6, distance_km = ?7,
+              duration_label = ?8, min_group = ?9, max_group = ?10,
+              includes = ?11, sort_order = ?12, updated_at = unixepoch()
+        WHERE id = ?13`
     )
     .bind(
       update.name,
@@ -71,6 +98,12 @@ export async function updateTour(id: string, update: TourUpdate): Promise<void> 
       update.badge || null,
       update.is_active ? 1 : 0,
       update.cover_image_id || null,
+      update.distance_km,
+      update.duration_label || null,
+      update.min_group,
+      update.max_group,
+      update.includes,
+      update.sort_order,
       id
     )
     .run();

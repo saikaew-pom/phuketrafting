@@ -6,31 +6,39 @@ export default async function ToursListPage() {
 
   return (
     <div>
-      <h1>Tours</h1>
-      <table style={{ borderCollapse: "collapse", width: "100%", marginTop: "16px" }}>
-        <thead>
-          <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
-            <th style={{ padding: "8px" }}>Code</th>
-            <th style={{ padding: "8px" }}>Name</th>
-            <th style={{ padding: "8px" }}>Distance</th>
-            <th style={{ padding: "8px" }}>Active</th>
-            <th style={{ padding: "8px" }}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {tours.map((tour) => (
-            <tr key={tour.id} style={{ borderBottom: "1px solid #eee" }}>
-              <td style={{ padding: "8px" }}>{tour.code}</td>
-              <td style={{ padding: "8px" }}>{tour.name}</td>
-              <td style={{ padding: "8px" }}>{tour.distance_km} km</td>
-              <td style={{ padding: "8px" }}>{tour.is_active ? "Yes" : "No"}</td>
-              <td style={{ padding: "8px" }}>
-                <Link href={`/dashboard/products/tours/${tour.id}`}>Edit</Link>
-              </td>
+      <div className="pr-dash-head">
+        <h1>Tours</h1>
+      </div>
+      <div className="pr-dash-tablewrap">
+        <table className="pr-dash-table">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Name</th>
+              <th>Distance</th>
+              <th>Status</th>
+              <th></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {tours.map((tour) => (
+              <tr key={tour.id}>
+                <td>{tour.code}</td>
+                <td>{tour.name}</td>
+                <td>{tour.distance_km ? `${tour.distance_km} km` : "--"}</td>
+                <td>
+                  <span className={"pr-dash-badge " + (tour.is_active ? "pr-dash-badge-ok" : "pr-dash-badge-neutral")}>
+                    {tour.is_active ? "Active" : "Hidden"}
+                  </span>
+                </td>
+                <td>
+                  <Link href={`/dashboard/products/tours/${tour.id}`}>Edit</Link>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

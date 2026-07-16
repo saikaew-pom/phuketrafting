@@ -7,44 +7,52 @@ export default async function BlogListPage() {
 
   return (
     <div>
-      <h1>Blog</h1>
-      <p>
-        <Link href="/dashboard/blog/new">+ New post</Link>
-      </p>
-      <table style={{ borderCollapse: "collapse", width: "100%", marginTop: "16px" }}>
-        <thead>
-          <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
-            <th style={{ padding: "8px" }}>Title</th>
-            <th style={{ padding: "8px" }}>Category</th>
-            <th style={{ padding: "8px" }}>Status</th>
-            <th style={{ padding: "8px" }}>Updated</th>
-            <th style={{ padding: "8px" }}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {posts.map((post) => (
-            <tr key={post.id} style={{ borderBottom: "1px solid #eee" }}>
-              <td style={{ padding: "8px" }}>
-                {post.title}
-                {post.featured === 1 && " ★"}
-              </td>
-              <td style={{ padding: "8px" }}>{categoryLabel(post.category)}</td>
-              <td style={{ padding: "8px" }}>{post.is_published ? "Published" : "Draft"}</td>
-              <td style={{ padding: "8px" }}>{formatDateTime(post.updated_at)}</td>
-              <td style={{ padding: "8px" }}>
-                <Link href={`/dashboard/blog/${post.id}`}>Edit</Link>
-              </td>
-            </tr>
-          ))}
-          {posts.length === 0 && (
+      <div className="pr-dash-head">
+        <h1>Blog</h1>
+        <Link href="/dashboard/blog/new" className="pr-dash-btn">
+          + New post
+        </Link>
+      </div>
+      <div className="pr-dash-tablewrap">
+        <table className="pr-dash-table">
+          <thead>
             <tr>
-              <td style={{ padding: "8px" }} colSpan={5}>
-                No posts yet.
-              </td>
+              <th>Title</th>
+              <th>Category</th>
+              <th>Status</th>
+              <th>Updated</th>
+              <th></th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {posts.map((post) => (
+              <tr key={post.id}>
+                <td>
+                  {post.title}
+                  {post.featured === 1 && " ★"}
+                </td>
+                <td>{categoryLabel(post.category)}</td>
+                <td>
+                  <span className={"pr-dash-badge " + (post.is_published ? "pr-dash-badge-ok" : "pr-dash-badge-neutral")}>
+                    {post.is_published ? "Published" : "Draft"}
+                  </span>
+                </td>
+                <td>{formatDateTime(post.updated_at)}</td>
+                <td>
+                  <Link href={`/dashboard/blog/${post.id}`}>Edit</Link>
+                </td>
+              </tr>
+            ))}
+            {posts.length === 0 && (
+              <tr>
+                <td colSpan={5}>
+                  <div className="pr-dash-empty">No posts yet.</div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

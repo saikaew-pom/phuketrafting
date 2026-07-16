@@ -1,5 +1,25 @@
 import { notFound } from "next/navigation";
+import { Sora, Plus_Jakarta_Sans } from "next/font/google";
 import { requireStaff, type StaffIdentity } from "@/lib/access";
+import { DashboardShell } from "./DashboardShell";
+
+// Same font setup as src/app/[lang]/layout.tsx -- the variables MUST be
+// declared on a wrapper that also carries .pr-app, because --font-head/
+// --font-body are defined on .pr-app and resolve their var() references at
+// their own declaration site (see the long comment in globals.css; getting
+// this wrong silently renders the whole dashboard in Times). DashboardShell
+// applies .pr-app; this layout supplies the font variables around it.
+const sora = Sora({
+  variable: "--font-sora",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+});
+
+const plusJakartaSans = Plus_Jakarta_Sans({
+  variable: "--font-plus-jakarta-sans",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+});
 
 // requireStaff() calls next/headers' headers() indirectly (inside
 // src/lib/access.ts), not directly in this component body. Next 16's
@@ -38,14 +58,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
 
   return (
-    <div style={{ padding: "24px", fontFamily: "system-ui, sans-serif" }}>
-      <header style={{ marginBottom: "24px", paddingBottom: "16px", borderBottom: "1px solid #ddd" }}>
-        <strong>Phuket Rafting — Staff</strong>
-        <span style={{ marginLeft: "16px", color: "#666" }}>
-          {staff.name} ({staff.email}) · {staff.role}
-        </span>
-      </header>
-      {children}
+    <div className={`${sora.variable} ${plusJakartaSans.variable}`}>
+      <DashboardShell staff={staff}>{children}</DashboardShell>
     </div>
   );
 }

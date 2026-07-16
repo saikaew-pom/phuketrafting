@@ -63,6 +63,9 @@ export interface CampZoneUpdate {
   description: string;
   is_active: boolean;
   cover_image_id: string;
+  /** Shown in chatbot grounding + blog-ai facts ("sleeps 2-4"), not on the public site (yet). */
+  sleeps_label: string;
+  sort_order: number;
 }
 
 export async function updateCampZone(id: string, update: CampZoneUpdate): Promise<void> {
@@ -70,8 +73,9 @@ export async function updateCampZone(id: string, update: CampZoneUpdate): Promis
     .prepare(
       `UPDATE camp_zones
           SET name = ?1, tagline = ?2, description = ?3, is_active = ?4,
-              cover_image_id = ?5, updated_at = unixepoch()
-        WHERE id = ?6`
+              cover_image_id = ?5, sleeps_label = ?6, sort_order = ?7,
+              updated_at = unixepoch()
+        WHERE id = ?8`
     )
     .bind(
       update.name,
@@ -79,6 +83,8 @@ export async function updateCampZone(id: string, update: CampZoneUpdate): Promis
       update.description || null,
       update.is_active ? 1 : 0,
       update.cover_image_id || null,
+      update.sleeps_label || null,
+      update.sort_order,
       id
     )
     .run();

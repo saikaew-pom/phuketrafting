@@ -21,6 +21,11 @@ export interface TourCard {
 export interface CampingTeaser {
   fromPrice: number;
   coverImageId: string | null;
+  /** The teaser zone's own DB name/tagline -- a staff rename must show here
+      too, not just in the booking widget (caught by the CMS coverage audit:
+      the card hardcoded copy the CMS appeared to control). */
+  name: string;
+  tagline: string | null;
 }
 
 export function Tours({ tours, camping }: { tours: TourCard[]; camping: CampingTeaser | null }) {
@@ -103,7 +108,7 @@ export function Tours({ tours, camping }: { tours: TourCard[]; camping: CampingT
                 {camping.coverImageId && (
                   <Image
                     src={camping.coverImageId}
-                    alt="Riverside Jungle Camping"
+                    alt={camping.name}
                     fill
                     sizes="(max-width: 768px) 100vw, 33vw"
                   />
@@ -111,8 +116,8 @@ export function Tours({ tours, camping }: { tours: TourCard[]; camping: CampingT
                 <span className="pr-badge pr-badge-camp">New</span>
               </div>
               <div className="pr-tcard-body">
-                <h3 className="pr-tcard-name">Riverside Jungle Camping</h3>
-                <p className="pr-tcard-tag">Retreat &amp; glamping by the river</p>
+                <h3 className="pr-tcard-name">{camping.name}</h3>
+                <p className="pr-tcard-tag">{camping.tagline ?? "Retreat & glamping by the river"}</p>
                 <div className="pr-tcard-meta">
                   <span>
                     <Clock size={14} className="pr-ico" /> Overnight

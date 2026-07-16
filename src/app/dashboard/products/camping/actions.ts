@@ -16,12 +16,19 @@ export async function saveCampZone(zoneId: string, formData: FormData) {
     throw new Error("Name is required");
   }
 
+  const sortOrder = Number(String(formData.get("sort_order") ?? "0").trim() || "0");
+  if (!Number.isInteger(sortOrder) || sortOrder < 0) {
+    throw new Error("Invalid sort order");
+  }
+
   await updateCampZone(zoneId, {
     name,
     tagline: String(formData.get("tagline") ?? "").trim(),
     description: String(formData.get("description") ?? "").trim(),
     is_active: formData.get("is_active") === "on",
     cover_image_id: String(formData.get("cover_image_id") ?? "").trim(),
+    sleeps_label: String(formData.get("sleeps_label") ?? "").trim(),
+    sort_order: sortOrder,
   });
 
   // Rate rows are named rate-weekday-<id> / rate-weekend-<id>.

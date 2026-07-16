@@ -4,7 +4,9 @@ import { createBlogPost } from "../actions";
 export default function NewBlogPostPage() {
   return (
     <div>
-      <h1>New post</h1>
+      <div className="pr-dash-head">
+        <h1>New post</h1>
+      </div>
       <BlogEditorClient post={null} action={createBlogPost} />
     </div>
   );

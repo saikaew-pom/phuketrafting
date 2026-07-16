@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { listTours, getTourRates } from "@/lib/queries/tours";
+import { listTours, getTourRates, parseIncludes } from "@/lib/queries/tours";
 import { listCampZones, getMinCampRate } from "@/lib/queries/camping";
 import { listPublishedReviews, listTourReviewStats } from "@/lib/queries/reviews";
 import { listPickupZones } from "@/lib/queries/pickup";
@@ -104,7 +104,9 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
       durationLabel: tour.duration_label,
       groupLabel: tour.min_group != null && tour.max_group != null ? `${tour.min_group}–${tour.max_group} guests` : null,
       badge: tour.badge,
-      highlights: JSON.parse(tour.includes) as string[],
+      // parseIncludes, not raw JSON.parse: a hand-corrupted row must drop the
+      // bullets, not 500 the whole Landing page (same guard the editor uses).
+      highlights: parseIncludes(tour.includes),
       avgRating: stats?.avg_rating ?? null,
       reviewCount: stats?.review_count ?? null,
     };
@@ -119,7 +121,14 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
   const teaserZone = campZones.find((z) => z.is_active) ?? null;
   const minCampRate = teaserZone ? await getMinCampRate(teaserZone.id) : null;
   const camping =
-    teaserZone && minCampRate != null ? { fromPrice: minCampRate, coverImageId: teaserZone.cover_image_id } : null;
+    teaserZone && minCampRate != null
+      ? {
+          fromPrice: minCampRate,
+          coverImageId: teaserZone.cover_image_id,
+          name: teaserZone.name,
+          tagline: teaserZone.tagline,
+        }
+      : null;
 
   const activeCampZones = campZones.filter((z) => z.is_active).map((z) => ({ id: z.id, name: z.name }));
 

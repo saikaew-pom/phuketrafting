@@ -5,8 +5,6 @@ import { ImageUploadField } from "@/components/ImageUploadField";
 import { BLOG_CATEGORIES, type BlogPost } from "@/lib/queries/blog";
 import { generateDraftAction, generateExcerptAction } from "./actions";
 
-const fieldStyle: React.CSSProperties = { display: "block", width: "100%" };
-
 interface Props {
   post: BlogPost | null; // null = new post
   action: (formData: FormData) => void;
@@ -57,83 +55,93 @@ export function BlogEditorClient({ post, action, onDelete }: Props) {
 
   return (
     <>
-      <form action={action} style={{ maxWidth: "720px", display: "grid", gap: "12px" }}>
-        <label>
-          Title
-          <input name="title" value={title} onChange={(e) => setTitle(e.target.value)} required style={fieldStyle} />
-        </label>
-        <label>
-          Slug (leave blank to generate from the title)
-          <input name="slug" defaultValue={post?.slug ?? ""} style={fieldStyle} />
-        </label>
-        <label>
-          Category
-          <select name="category" value={category} onChange={(e) => setCategory(e.target.value)} style={fieldStyle}>
-            {BLOG_CATEGORIES.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Author
-          <input name="author" defaultValue={post?.author ?? ""} placeholder="Defaults to your staff name" style={fieldStyle} />
-        </label>
-        <ImageUploadField name="cover_image_id" initialPublicId={post?.cover_image_id ?? null} label="Cover image" />
-
-        <div>
-          <button type="button" onClick={handleGenerateDraft} disabled={draftBusy || excerptBusy}>
-            {draftBusy ? "Writing..." : "Write draft with AI"}
-          </button>
-          <span style={{ marginLeft: "8px", color: "#666" }}>Fills the body below -- always review before publishing.</span>
+      <form action={action} className="pr-dash-form">
+        <div className="pr-dash-card">
+          <h2>Post</h2>
+          <div className="pr-dash-form">
+            <label className="pr-dash-field">
+              Title
+              <input name="title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+            </label>
+            <label className="pr-dash-field">
+              Slug
+              <input name="slug" defaultValue={post?.slug ?? ""} />
+              <span className="pr-dash-field-hint">The address of the post, e.g. /en/blog/your-slug. Leave blank to generate from the title.</span>
+            </label>
+            <label className="pr-dash-field">
+              Category
+              <select name="category" value={category} onChange={(e) => setCategory(e.target.value)}>
+                {BLOG_CATEGORIES.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="pr-dash-field">
+              Author
+              <input name="author" defaultValue={post?.author ?? ""} placeholder="Defaults to your staff name" />
+            </label>
+            <ImageUploadField name="cover_image_id" initialPublicId={post?.cover_image_id ?? null} label="Cover image" />
+          </div>
         </div>
-        <label>
-          Body (markdown -- ## headings, **bold**, - bullets, [text](url) links)
-          <textarea
-            name="content"
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            required
-            rows={20}
-            style={{ ...fieldStyle, fontFamily: "monospace" }}
-          />
-        </label>
 
-        <div>
-          <button type="button" onClick={handleGenerateExcerpt} disabled={draftBusy || excerptBusy}>
-            {excerptBusy ? "Writing..." : "Generate excerpt with AI"}
-          </button>
+        <div className="pr-dash-card">
+          <h2>Article</h2>
+          <div className="pr-dash-form">
+            <div className="pr-dash-actions">
+              <button type="button" className="pr-dash-btn pr-dash-btn-ghost" onClick={handleGenerateDraft} disabled={draftBusy || excerptBusy}>
+                {draftBusy ? "Writing..." : "Write draft with AI"}
+              </button>
+              <span className="pr-dash-field-hint">Fills the body below -- always review before publishing.</span>
+            </div>
+            <label className="pr-dash-field">
+              Body (markdown -- ## headings, **bold**, - bullets, [text](url) links)
+              <textarea
+                name="content"
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                required
+                rows={20}
+                style={{ fontFamily: "ui-monospace, monospace", fontSize: "13.5px" }}
+              />
+            </label>
+            <div className="pr-dash-actions">
+              <button type="button" className="pr-dash-btn pr-dash-btn-ghost" onClick={handleGenerateExcerpt} disabled={draftBusy || excerptBusy}>
+                {excerptBusy ? "Writing..." : "Generate excerpt with AI"}
+              </button>
+            </div>
+            <label className="pr-dash-field">
+              Excerpt (shown on the blog list page)
+              <textarea name="excerpt" value={excerpt} onChange={(e) => setExcerpt(e.target.value)} rows={2} />
+            </label>
+            {aiError && <p className="pr-dash-error">{aiError}</p>}
+          </div>
         </div>
-        <label>
-          Excerpt (shown on the blog list page)
-          <textarea name="excerpt" value={excerpt} onChange={(e) => setExcerpt(e.target.value)} rows={2} style={fieldStyle} />
-        </label>
 
-        {aiError && <p style={{ color: "crimson" }}>{aiError}</p>}
+        <div className="pr-dash-card">
+          <h2>Publishing</h2>
+          <div className="pr-dash-form">
+            <label className="pr-dash-check">
+              <input type="checkbox" name="featured" defaultChecked={post?.featured === 1} /> Featured
+            </label>
+            <label className="pr-dash-check">
+              <input type="checkbox" name="is_published" defaultChecked={post?.is_published === 1} /> Published (visible on the site)
+            </label>
+          </div>
+        </div>
 
-        <label>
-          <input type="checkbox" name="featured" defaultChecked={post?.featured === 1} /> Featured
-        </label>
-        <label>
-          <input type="checkbox" name="is_published" defaultChecked={post?.is_published === 1} /> Published
-        </label>
-
-        <button type="submit" style={{ padding: "8px 16px", marginTop: "8px" }}>
-          Save
-        </button>
+        <div className="pr-dash-actions">
+          <button type="submit" className="pr-dash-btn">
+            Save
+          </button>
+          {onDelete && (
+            <button type="button" className="pr-dash-btn pr-dash-btn-danger" onClick={handleDeleteClick} disabled={deletePending}>
+              {deletePending ? "Deleting..." : "Delete post"}
+            </button>
+          )}
+        </div>
       </form>
-
-      {onDelete && (
-        <button
-          type="button"
-          onClick={handleDeleteClick}
-          disabled={deletePending}
-          style={{ marginTop: "24px", color: "crimson" }}
-        >
-          {deletePending ? "Deleting..." : "Delete post"}
-        </button>
-      )}
     </>
   );
 }

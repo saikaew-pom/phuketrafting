@@ -4,6 +4,17 @@ import { revalidatePath } from "next/cache";
 import { updateTour, updateTourRatePrice } from "@/lib/queries/tours";
 import { requireStaff } from "@/lib/access";
 
+/** "" -> null (staff cleared it), otherwise a validated finite number. */
+function optionalNumber(raw: FormDataEntryValue | null, label: string, { integer = false } = {}): number | null {
+  const value = String(raw ?? "").trim();
+  if (!value) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0 || (integer && !Number.isInteger(n))) {
+    throw new Error(`Invalid ${label}`);
+  }
+  return n;
+}
+
 export async function saveTour(tourId: string, formData: FormData) {
   // Server Actions are reachable via direct POST regardless of whether the
   // dashboard layout ever rendered for this caller -- re-verify here. See
@@ -16,6 +27,20 @@ export async function saveTour(tourId: string, formData: FormData) {
     throw new Error("Name is required");
   }
 
+  const minGroup = optionalNumber(formData.get("min_group"), "min group size", { integer: true });
+  const maxGroup = optionalNumber(formData.get("max_group"), "max group size", { integer: true });
+  if (minGroup != null && maxGroup != null && minGroup > maxGroup) {
+    throw new Error("Min group size can't be larger than max group size.");
+  }
+
+  // The public card's sales bullets. One per line in the form; stored as the
+  // JSON array the `includes` TEXT column has always held -- staff should
+  // never see or type JSON (plan §3: "no raw JSON/IDs shown").
+  const includes = String(formData.get("includes") ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
   await updateTour(tourId, {
     name,
     tagline: String(formData.get("tagline") ?? "").trim(),
@@ -23,6 +48,12 @@ export async function saveTour(tourId: string, formData: FormData) {
     badge: String(formData.get("badge") ?? "").trim(),
     is_active: formData.get("is_active") === "on",
     cover_image_id: String(formData.get("cover_image_id") ?? "").trim(),
+    distance_km: optionalNumber(formData.get("distance_km"), "distance"),
+    duration_label: String(formData.get("duration_label") ?? "").trim(),
+    min_group: minGroup,
+    max_group: maxGroup,
+    includes: JSON.stringify(includes),
+    sort_order: optionalNumber(formData.get("sort_order"), "sort order", { integer: true }) ?? 0,
   });
 
   // Every rate row on the form is named rate-<rateId>; update each that changed.

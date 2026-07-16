@@ -2090,3 +2090,380 @@ select.pr-input {
   color: var(--green);
   font-weight: 600;
 }
+
+/* ---- Dashboard (staff CMS) ------------------------------------------------
+   Same tokens as the public site (--accent/--ink/--line/--radius/shadows) so
+   the two surfaces read as one brand; only the shell differs. The sidebar is
+   deliberately ink-dark: staff instantly know they're on the internal tool,
+   and .pr-brand-name's default white works on it unchanged. */
+.pr-dash {
+  display: grid;
+  grid-template-columns: 232px 1fr;
+  min-height: 100vh;
+  background: var(--bg-tint);
+}
+.pr-dash-side {
+  background: var(--ink);
+  color: #fff;
+  padding: 22px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+.pr-dash-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 10px;
+}
+.pr-dash-brand-sub {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.pr-dash-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+.pr-dash-navlink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px;
+  border-radius: var(--radius-sm);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14.5px;
+  font-weight: 600;
+  transition: 0.15s ease;
+}
+.pr-dash-navlink:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.pr-dash-navlink-active {
+  background: var(--accent);
+  color: #fff;
+}
+.pr-dash-user {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 13px;
+}
+.pr-dash-user strong {
+  font-size: 14px;
+}
+.pr-dash-user span {
+  color: rgba(255, 255, 255, 0.55);
+  word-break: break-all;
+}
+.pr-dash-user .pr-dash-badge {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+.pr-dash-main {
+  padding: 28px 32px 64px;
+  min-width: 0; /* tables must scroll inside the grid column, not widen it */
+}
+.pr-dash-topbar {
+  display: none;
+}
+.pr-dash-mobile {
+  display: none;
+}
+
+/* page header: h1 + optional action buttons on one row */
+.pr-dash-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.pr-dash-head h1 {
+  font-size: clamp(22px, 3vw, 30px);
+}
+.pr-dash-head p {
+  width: 100%;
+  color: var(--ink-2);
+  font-size: 14.5px;
+}
+
+.pr-dash-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 20px;
+}
+.pr-dash-card + .pr-dash-card,
+.pr-dash-card + .pr-dash-tablewrap,
+.pr-dash-tablewrap + .pr-dash-card {
+  margin-top: 16px;
+}
+.pr-dash-card h2 {
+  font-size: 17px;
+  margin-bottom: 12px;
+}
+.pr-dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+/* tables: wrapper owns the border/scroll so wide tables never widen the page */
+.pr-dash-tablewrap {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow-x: auto;
+}
+.pr-dash-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.pr-dash-table th {
+  text-align: left;
+  font-family: var(--font-head);
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line-2);
+  white-space: nowrap;
+}
+.pr-dash-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-2);
+  vertical-align: top;
+}
+.pr-dash-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.pr-dash-table tbody tr:hover {
+  background: var(--bg-tint);
+}
+.pr-dash-table a {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.pr-dash-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  transition: 0.15s ease;
+}
+.pr-dash-btn:hover {
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
+}
+.pr-dash-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.pr-dash-btn-ghost {
+  background: #fff;
+  border-color: var(--line-2);
+  color: var(--ink-2);
+}
+.pr-dash-btn-ghost:hover {
+  background: var(--bg-tint);
+  border-color: var(--ink-3);
+  color: var(--ink);
+}
+.pr-dash-btn-danger {
+  background: #fff;
+  border-color: #d64545;
+  color: #c03535;
+}
+.pr-dash-btn-danger:hover {
+  background: #c03535;
+  border-color: #c03535;
+  color: #fff;
+}
+.pr-dash-btn-sm {
+  padding: 6px 11px;
+  font-size: 13px;
+}
+.pr-dash-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* forms */
+.pr-dash-form {
+  display: grid;
+  gap: 14px;
+  max-width: 720px;
+}
+.pr-dash-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.pr-dash-field input,
+.pr-dash-field select,
+.pr-dash-field textarea {
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 400;
+  color: var(--ink);
+  padding: 9px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  width: 100%;
+}
+.pr-dash-field input:focus,
+.pr-dash-field select:focus,
+.pr-dash-field textarea:focus {
+  outline: 2px solid var(--accent-soft);
+  border-color: var(--accent);
+}
+.pr-dash-field-hint {
+  font-weight: 400;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.pr-dash-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14.5px;
+  color: var(--ink-2);
+}
+.pr-dash-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.pr-dash-badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.pr-dash-badge-ok {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.pr-dash-badge-warn {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+.pr-dash-badge-danger {
+  background: #fdecec;
+  color: #c03535;
+}
+.pr-dash-badge-neutral {
+  background: rgba(121, 131, 138, 0.15);
+  color: var(--ink-2);
+}
+.pr-dash-empty {
+  color: var(--ink-3);
+  font-size: 14.5px;
+  padding: 28px 0;
+  text-align: center;
+}
+.pr-dash-error {
+  color: #c03535;
+  font-size: 14px;
+}
+
+@media (max-width: 900px) {
+  .pr-dash {
+    grid-template-columns: 1fr;
+  }
+  .pr-dash-side {
+    display: none;
+  }
+  .pr-dash-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--ink);
+    padding: 14px 18px;
+    position: sticky;
+    top: 0;
+    z-index: 40;
+  }
+  .pr-dash-burger {
+    background: none;
+    border: none;
+    color: #fff;
+    line-height: 0;
+    padding: 4px;
+  }
+  .pr-dash-mobile {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    background: var(--ink);
+    /* color must be set here, not inherited: this block sits outside
+       .pr-dash-side, so without it the staff name inherits body's near-black
+       ink and is invisible on the dark background (caught live on mobile). */
+    color: #fff;
+    padding: 6px 14px 16px;
+    position: sticky;
+    top: 52px;
+    z-index: 40;
+  }
+  .pr-dash-main {
+    padding: 20px 16px 48px;
+  }
+}
+
+.pr-dash-homecard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: 0.18s ease;
+}
+.pr-dash-homecard:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow);
+  border-color: var(--line-2);
+}
+.pr-dash-homecard-ico {
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.pr-dash-homecard strong {
+  font-family: var(--font-head);
+  font-size: 16px;
+}
+.pr-dash-homecard span {
+  color: var(--ink-3);
+  font-size: 13.5px;
+}

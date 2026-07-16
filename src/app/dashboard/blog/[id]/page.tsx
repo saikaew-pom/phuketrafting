@@ -13,7 +13,9 @@ export default async function EditBlogPostPage({ params }: { params: Promise<{ i
 
   return (
     <div>
-      <h1>{post.title}</h1>
+      <div className="pr-dash-head">
+        <h1>{post.title}</h1>
+      </div>
       <BlogEditorClient post={post} action={saveWithId} onDelete={deleteWithId} />
     </div>
   );
