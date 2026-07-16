@@ -247,3 +247,44 @@ export async function getChatPolicy(dbOverride?: D1Database): Promise<ChatPolicy
         : DEFAULT_CHAT_POLICY.dailyTokenCap,
   };
 }
+
+/**
+ * The FIRST staff-facing write path to `settings` (the only other writer is
+ * the automated chat-spend counter). Before this, "adjustable without code
+ * changes" -- the table's whole design goal -- meant `wrangler d1 execute`
+ * against production, which the CMS coverage audit flagged as the sharpest
+ * gap in the dashboard: the chatbot kill switch was unreachable by staff.
+ *
+ * Callers pass already-validated typed objects; the getters above still
+ * validate every read, so even a bad write degrades to defaults rather than
+ * breaking checkout or the chatbot (defense in both directions).
+ */
+const UPSERT_SETTING = `INSERT INTO settings (key, value, updated_at, updated_by) VALUES (?1, ?2, unixepoch(), ?3)
+   ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = unixepoch(), updated_by = excluded.updated_by`;
+
+/**
+ * Writes the payment and chat policies as ONE transaction.
+ *
+ * They're written together because the settings form saves them together, and
+ * a half-applied save is a genuinely bad state: the failure mode is "payments
+ * switched to the new deposit rate, but the chatbot kill switch the same
+ * admin just flipped didn't take". D1 has no BEGIN/COMMIT, so db.batch() --
+ * which D1 runs as a single transaction -- is the only way to make both land
+ * or neither, the same reasoning booking.ts uses for capacity+insert.
+ *
+ * updated_by is the schema's own audit column: money-adjacent settings
+ * (deposit %, cancellation window) deserve a "who changed this" trail. It's
+ * an FK to staff.email and always comes from a row read out of `staff`, so it
+ * cannot violate.
+ */
+export async function writePolicies(
+  payment: PaymentPolicy,
+  chat: ChatPolicy,
+  updatedBy: string
+): Promise<void> {
+  const db = getDb();
+  await db.batch([
+    db.prepare(UPSERT_SETTING).bind(PAYMENT_POLICY_KEY, JSON.stringify(payment), updatedBy),
+    db.prepare(UPSERT_SETTING).bind(CHAT_POLICY_KEY, JSON.stringify(chat), updatedBy),
+  ]);
+}

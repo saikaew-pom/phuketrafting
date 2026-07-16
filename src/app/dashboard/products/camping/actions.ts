@@ -37,8 +37,15 @@ export async function saveCampZone(zoneId: string, formData: FormData) {
     if (key.startsWith("rate-weekday-")) rateIds.add(key.slice("rate-weekday-".length));
   }
   for (const rateId of rateIds) {
-    const weekday = Number(formData.get(`rate-weekday-${rateId}`));
-    const weekend = Number(formData.get(`rate-weekend-${rateId}`));
+    // Blank is rejected, not coerced: Number("") is 0, not NaN, so clearing a
+    // nightly rate silently made the stay free. Money has no safe default.
+    const rawWeekday = String(formData.get(`rate-weekday-${rateId}`) ?? "").trim();
+    const rawWeekend = String(formData.get(`rate-weekend-${rateId}`) ?? "").trim();
+    if (!rawWeekday || !rawWeekend) {
+      throw new Error("Prices can't be blank -- enter 0 only if the stay really is free.");
+    }
+    const weekday = Number(rawWeekday);
+    const weekend = Number(rawWeekend);
     if (!Number.isFinite(weekday) || weekday < 0 || !Number.isFinite(weekend) || weekend < 0) {
       throw new Error(`Invalid price for rate ${rateId}`);
     }

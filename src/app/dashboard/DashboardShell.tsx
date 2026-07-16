@@ -10,6 +10,10 @@ import {
   Waves,
   Tent,
   Newspaper,
+  Star,
+  MapPin,
+  Inbox,
+  Settings,
   Menu,
   X,
 } from "lucide-react";
@@ -31,7 +35,13 @@ const NAV = [
   { href: "/dashboard/day-sheet", label: "Day sheet", icon: ClipboardList },
   { href: "/dashboard/products/tours", label: "Tours", icon: Waves },
   { href: "/dashboard/products/camping", label: "Camping", icon: Tent },
+  { href: "/dashboard/enquiries", label: "Enquiries", icon: Inbox },
+  { href: "/dashboard/pickup", label: "Pickup zones", icon: MapPin },
+  { href: "/dashboard/reviews", label: "Reviews", icon: Star },
   { href: "/dashboard/blog", label: "Blog", icon: Newspaper },
+  // Rendering is gated on role below, but that's UX, not security -- the
+  // settings page and its action both requireAdmin() server-side.
+  { href: "/dashboard/settings", label: "Settings", icon: Settings, adminOnly: true },
 ];
 
 function isActive(pathname: string, item: (typeof NAV)[number]): boolean {
@@ -50,7 +60,7 @@ export function DashboardShell({
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  const links = NAV.map((item) => {
+  const links = NAV.filter((item) => !item.adminOnly || staff.role === "admin").map((item) => {
     const Icon = item.icon;
     return (
       <Link

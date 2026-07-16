@@ -60,7 +60,12 @@ export async function saveTour(tourId: string, formData: FormData) {
   for (const [key, value] of formData.entries()) {
     if (!key.startsWith("rate-")) continue;
     const rateId = key.slice("rate-".length);
-    const price = Number(value);
+    // The emptiness check is NOT redundant with isFinite: Number("") is 0, not
+    // NaN, so a cleared price field silently made the tour FREE rather than
+    // failing. A price is money -- it has no safe default.
+    const raw = String(value).trim();
+    if (!raw) throw new Error("Prices can't be blank -- enter 0 only if the tour really is free.");
+    const price = Number(raw);
     if (!Number.isFinite(price) || price < 0) {
       throw new Error(`Invalid price for rate ${rateId}`);
     }
