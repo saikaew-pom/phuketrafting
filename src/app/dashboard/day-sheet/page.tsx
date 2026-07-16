@@ -37,162 +37,163 @@ export default async function DaySheetPage({
   const totalGuests = (a: number, c: number, i: number) => a + c + i;
 
   return (
-    <div>
-      {/* Browser print (Cmd/Ctrl+P) -> PDF is the "printable manifest" -- no
-          server-side PDF generation dependency, which the Workers runtime
-          doesn't support well. Hides the date-nav chrome, keeps the rosters. */}
-      <style>{`@media print { .no-print { display: none !important; } }`}</style>
-
-      <div className="no-print" style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-        <h1 style={{ margin: 0 }}>Day sheet</h1>
-        <Link href={`/dashboard/day-sheet?date=${addDaysISO(date, -1)}`}>&larr; Prev day</Link>
-        <Link href={`/dashboard/day-sheet?date=${todayISO()}`}>Today</Link>
-        <Link href={`/dashboard/day-sheet?date=${addDaysISO(date, 1)}`}>Next day &rarr;</Link>
+    <div className="pr-sheet">
+      <div className="pr-dash-head no-print">
+        <h1>Day sheet</h1>
+        <div className="pr-dash-actions">
+          <Link href={`/dashboard/day-sheet?date=${addDaysISO(date, -1)}`} className="pr-dash-btn pr-dash-btn-ghost pr-dash-btn-sm">
+            &larr; Prev
+          </Link>
+          <Link href={`/dashboard/day-sheet?date=${todayISO()}`} className="pr-dash-btn pr-dash-btn-ghost pr-dash-btn-sm">
+            Today
+          </Link>
+          <Link href={`/dashboard/day-sheet?date=${addDaysISO(date, 1)}`} className="pr-dash-btn pr-dash-btn-ghost pr-dash-btn-sm">
+            Next &rarr;
+          </Link>
+        </div>
+        <p>Print this page (Cmd/Ctrl+P) for the paper manifest -- the date nav and check-in boxes drop out.</p>
       </div>
-      <h2 style={{ marginTop: 0 }}>{date}</h2>
 
-      <h3>Tour departures</h3>
-      {sheet.sessions.length === 0 && <p>No tour sessions scheduled.</p>}
+      {/* The printed manifest's own title: the screen h1 is hidden in print
+          (it sits in .no-print chrome), so the date has to carry the sheet. */}
+      <h2 className="pr-sheet-date">{date}</h2>
+
+      <h3 className="pr-sheet-section">Tour departures</h3>
+      {sheet.sessions.length === 0 && <div className="pr-dash-empty">No tour departures scheduled.</div>}
       {sheet.sessions.map((session) => (
-        <div key={session.id} style={{ marginBottom: "24px" }}>
-          <h4 style={{ marginBottom: "4px" }}>
+        <div key={session.id} className="pr-dash-card pr-sheet-block">
+          <h4 className="pr-sheet-title">
             {session.start_time} &mdash; {session.tour_name}{" "}
-            <span style={{ fontWeight: "normal", color: "#666" }}>
+            <span>
               ({session.booked_count} / {session.capacity - session.allotment_hold} booked)
             </span>
           </h4>
           {session.bookings.length === 0 ? (
-            <p>No bookings for this session.</p>
+            <div className="pr-dash-empty">No bookings for this departure.</div>
           ) : (
-            <table style={{ borderCollapse: "collapse", width: "100%" }}>
+            <div className="pr-dash-tablewrap pr-sheet-tablewrap">
+              <table className="pr-dash-table pr-sheet-table">
+                <thead>
+                  <tr>
+                    <th>Guest</th>
+                    <th>Party</th>
+                    <th>Pickup zone</th>
+                    <th>Hotel</th>
+                    <th>Phone</th>
+                    <th>Consent</th>
+                    <th>Waivers</th>
+                    <th>Notes</th>
+                    <th className="no-print">Checked in</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {session.bookings.map((b) => {
+                    const party = totalGuests(b.adults, b.children, b.infants);
+                    const waiversIncomplete = b.signed_waivers < party;
+                    return (
+                      <tr key={b.id}>
+                        <td>{b.guest_name}</td>
+                        <td>{party}</td>
+                        <td>{b.pickup_zone_name ?? "--"}</td>
+                        <td>{b.hotel ?? "--"}</td>
+                        <td>{b.guest_phone ?? "--"}</td>
+                        <td>{b.waiver_acknowledged ? "Yes" : "No"}</td>
+                        {/* Bold the incomplete case: this is the column crew scan
+                            down each morning to catch who still needs to sign
+                            before departure (plan §7), so "not all signed" has to
+                            be the thing that catches the eye, not blend in. Kept as
+                            weight, not colour -- the sheet gets printed in mono. */}
+                        <td className={waiversIncomplete ? "pr-sheet-flag" : undefined}>
+                          {b.signed_waivers} / {party}
+                        </td>
+                        <td>{b.notes ?? ""}</td>
+                        <td className="no-print">
+                          <form action={toggleCheckedIn.bind(null, b.id)} className="pr-dash-actions">
+                            {/* key forces a remount when checked_in changes -- without it,
+                                React's uncontrolled checkbox keeps its stale DOM state across
+                                a same-page re-render triggered by submitting a DIFFERENT row's
+                                form (this page has many independently-submittable checkboxes,
+                                unlike the single-booking detail page). Same fix as the status
+                                <select>'s key in dashboard/bookings/[id]/page.tsx. Confirmed
+                                live: without this key, checking in one guest then submitting a
+                                second guest's row left the first guest's box unchecked on
+                                screen even though D1 had already recorded checked_in=1. */}
+                            <input type="checkbox" name="checked_in" defaultChecked={b.checked_in === 1} key={b.checked_in} />
+                            <button type="submit" className="pr-dash-btn pr-dash-btn-ghost pr-dash-btn-sm">
+                              Update
+                            </button>
+                          </form>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ))}
+
+      <h3 className="pr-sheet-section">Camp arrivals</h3>
+      {sheet.campArrivals.length === 0 ? (
+        <div className="pr-dash-empty">No campers arriving.</div>
+      ) : (
+        <div className="pr-dash-card pr-sheet-block">
+          <div className="pr-dash-tablewrap pr-sheet-tablewrap">
+            <table className="pr-dash-table pr-sheet-table">
               <thead>
-                <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
-                  <th style={{ padding: "6px" }}>Guest</th>
-                  <th style={{ padding: "6px" }}>Party</th>
-                  <th style={{ padding: "6px" }}>Pickup zone</th>
-                  <th style={{ padding: "6px" }}>Hotel</th>
-                  <th style={{ padding: "6px" }}>Phone</th>
-                  <th style={{ padding: "6px" }}>Consent</th>
-                  <th style={{ padding: "6px" }}>Waivers</th>
-                  <th style={{ padding: "6px" }}>Notes</th>
-                  <th style={{ padding: "6px" }} className="no-print">
-                    Checked in
-                  </th>
+                <tr>
+                  <th>Guest</th>
+                  <th>Party</th>
+                  <th>Zone</th>
+                  <th>Unit</th>
+                  <th>Phone</th>
+                  <th>Departing</th>
+                  <th>Notes</th>
+                  <th className="no-print">Checked in</th>
                 </tr>
               </thead>
               <tbody>
-                {session.bookings.map((b) => (
-                  <tr key={b.id} style={{ borderBottom: "1px solid #eee" }}>
-                    <td style={{ padding: "6px" }}>{b.guest_name}</td>
-                    <td style={{ padding: "6px" }}>{totalGuests(b.adults, b.children, b.infants)}</td>
-                    <td style={{ padding: "6px" }}>{b.pickup_zone_name ?? "—"}</td>
-                    <td style={{ padding: "6px" }}>{b.hotel ?? "—"}</td>
-                    <td style={{ padding: "6px" }}>{b.guest_phone ?? "—"}</td>
-                    <td style={{ padding: "6px" }}>{b.waiver_acknowledged ? "Yes" : "No"}</td>
-                    {/* Bold the incomplete case: this is the column crew scan
-                        down each morning to catch who still needs to sign
-                        before departure (plan §7), so "not all signed" has to
-                        be the thing that catches the eye, not blend in. */}
-                    <td
-                      style={{
-                        padding: "6px",
-                        fontWeight: b.signed_waivers < totalGuests(b.adults, b.children, b.infants) ? "bold" : "normal",
-                      }}
-                    >
-                      {b.signed_waivers} / {totalGuests(b.adults, b.children, b.infants)}
-                    </td>
-                    <td style={{ padding: "6px" }}>{b.notes ?? ""}</td>
-                    <td style={{ padding: "6px" }} className="no-print">
-                      <form action={toggleCheckedIn.bind(null, b.id)}>
-                        <label>
-                          {/* key forces a remount when checked_in changes -- without it,
-                              React's uncontrolled checkbox keeps its stale DOM state across
-                              a same-page re-render triggered by submitting a DIFFERENT row's
-                              form (this page has many independently-submittable checkboxes,
-                              unlike the single-booking detail page). Same fix as the status
-                              <select>'s key in dashboard/bookings/[id]/page.tsx. Confirmed
-                              live: without this key, checking in one guest then submitting a
-                              second guest's row left the first guest's box unchecked on
-                              screen even though D1 had already recorded checked_in=1. */}
-                          <input
-                            type="checkbox"
-                            name="checked_in"
-                            defaultChecked={b.checked_in === 1}
-                            key={b.checked_in}
-                          />{" "}
-                          <button type="submit">Update</button>
-                        </label>
+                {sheet.campArrivals.map((b) => (
+                  <tr key={b.id}>
+                    <td>{b.guest_name}</td>
+                    <td>{totalGuests(b.adults, b.children, b.infants)}</td>
+                    <td>{b.zone_name}</td>
+                    <td>{b.unit_name}</td>
+                    <td>{b.guest_phone ?? "--"}</td>
+                    <td>{b.check_out}</td>
+                    <td>{b.notes ?? ""}</td>
+                    <td className="no-print">
+                      <form action={toggleCheckedIn.bind(null, b.id)} className="pr-dash-actions">
+                        {/* key forces a remount when checked_in changes -- see the matching
+                            comment on the tour roster's checkbox above. */}
+                        <input type="checkbox" name="checked_in" defaultChecked={b.checked_in === 1} key={b.checked_in} />
+                        <button type="submit" className="pr-dash-btn pr-dash-btn-ghost pr-dash-btn-sm">
+                          Update
+                        </button>
                       </form>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          )}
+          </div>
         </div>
-      ))}
-
-      <h3>Camp arrivals</h3>
-      {sheet.campArrivals.length === 0 ? (
-        <p>No campers arriving.</p>
-      ) : (
-        <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: "24px" }}>
-          <thead>
-            <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
-              <th style={{ padding: "6px" }}>Guest</th>
-              <th style={{ padding: "6px" }}>Party</th>
-              <th style={{ padding: "6px" }}>Zone</th>
-              <th style={{ padding: "6px" }}>Unit</th>
-              <th style={{ padding: "6px" }}>Phone</th>
-              <th style={{ padding: "6px" }}>Departing</th>
-              <th style={{ padding: "6px" }}>Notes</th>
-              <th style={{ padding: "6px" }} className="no-print">
-                Checked in
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {sheet.campArrivals.map((b) => (
-              <tr key={b.id} style={{ borderBottom: "1px solid #eee" }}>
-                <td style={{ padding: "6px" }}>{b.guest_name}</td>
-                <td style={{ padding: "6px" }}>{totalGuests(b.adults, b.children, b.infants)}</td>
-                <td style={{ padding: "6px" }}>{b.zone_name}</td>
-                <td style={{ padding: "6px" }}>{b.unit_name}</td>
-                <td style={{ padding: "6px" }}>{b.guest_phone ?? "—"}</td>
-                <td style={{ padding: "6px" }}>{b.check_out}</td>
-                <td style={{ padding: "6px" }}>{b.notes ?? ""}</td>
-                <td style={{ padding: "6px" }} className="no-print">
-                  <form action={toggleCheckedIn.bind(null, b.id)}>
-                    <label>
-                      {/* key forces a remount when checked_in changes -- see the matching
-                          comment on the tour roster's checkbox above. */}
-                      <input
-                        type="checkbox"
-                        name="checked_in"
-                        defaultChecked={b.checked_in === 1}
-                        key={b.checked_in}
-                      />{" "}
-                      <button type="submit">Update</button>
-                    </label>
-                  </form>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       )}
 
-      <h3>Camp departures</h3>
+      <h3 className="pr-sheet-section">Camp departures</h3>
       {sheet.campDepartures.length === 0 ? (
-        <p>No campers departing.</p>
+        <div className="pr-dash-empty">No campers departing.</div>
       ) : (
-        <ul>
-          {sheet.campDepartures.map((b) => (
-            <li key={b.id}>
-              {b.guest_name} &mdash; {b.zone_name} / {b.unit_name}
-            </li>
-          ))}
-        </ul>
+        <div className="pr-dash-card pr-sheet-block">
+          <ul className="pr-sheet-list">
+            {sheet.campDepartures.map((b) => (
+              <li key={b.id}>
+                {b.guest_name} &mdash; {b.zone_name} / {b.unit_name}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );

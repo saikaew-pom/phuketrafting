@@ -2467,3 +2467,109 @@ select.pr-input {
   color: var(--ink-3);
   font-size: 13.5px;
 }
+
+/* ---- Day sheet + print ----------------------------------------------------
+   The printed manifest is a real deliverable: crew carry it to the river and
+   tick names off on paper. Browser print (Cmd/Ctrl+P) -> PDF is deliberately
+   the whole mechanism -- no server-side PDF library, which the Workers runtime
+   doesn't support well. So the print rules below are load-bearing UI, not a
+   nicety: they strip the app chrome (sidebar, nav, buttons) and leave a dense,
+   monochrome roster that fits landscape A4. */
+.pr-sheet-date {
+  font-size: 20px;
+  margin-bottom: 6px;
+}
+.pr-sheet-section {
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  margin: 24px 0 10px;
+}
+.pr-sheet-block {
+  margin-bottom: 14px;
+}
+.pr-sheet-title {
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+.pr-sheet-title span {
+  font-family: var(--font-body);
+  font-weight: 400;
+  color: var(--ink-3);
+  font-size: 13.5px;
+}
+/* Weight, not colour: the sheet is printed in mono, so a colour-coded
+   "waivers outstanding" flag would vanish on paper. */
+.pr-sheet-flag {
+  font-weight: 700;
+  color: var(--ink);
+}
+.pr-sheet-list {
+  margin-left: 18px;
+  color: var(--ink-2);
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  /* The grid's sidebar column would otherwise reserve 232px of every printed
+     page -- the roster has to reclaim the full sheet width. */
+  .pr-dash {
+    display: block;
+    background: #fff;
+  }
+  .pr-dash-side,
+  .pr-dash-topbar,
+  .pr-dash-mobile {
+    display: none !important;
+  }
+  .pr-dash-main {
+    padding: 0;
+  }
+  /* Cards become plain sections: shadows and rounded borders waste toner and
+     add nothing on paper. */
+  .pr-dash-card,
+  .pr-dash-tablewrap {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+    overflow: visible;
+  }
+  .pr-sheet-block {
+    /* Keep a departure's heading with its roster -- a page break between them
+       leaves crew holding a nameless list. */
+    break-inside: avoid;
+    margin-bottom: 18px;
+  }
+  .pr-sheet-table {
+    font-size: 11px;
+  }
+  .pr-sheet-table th,
+  .pr-sheet-table td {
+    padding: 4px 6px;
+    border-bottom: 1px solid #ccc;
+    color: #000;
+  }
+  .pr-sheet-table th {
+    color: #000;
+    border-bottom: 1.5px solid #000;
+  }
+  .pr-sheet-section {
+    color: #000;
+    margin: 14px 0 6px;
+  }
+  .pr-sheet-tablewrap {
+    overflow-x: visible;
+  }
+  @page {
+    size: A4 landscape;
+    margin: 12mm;
+  }
+}

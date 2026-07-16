@@ -29,112 +29,135 @@ export default async function NewBookingPage({
 
   return (
     <div>
-      <h1>New booking (staff-created)</h1>
-      <p>
-        For phone/walk-in bookings, or to add a guest to a session that&apos;s already full (check &quot;Allow
-        overbook&quot; below).
-      </p>
+      <div className="pr-dash-head">
+        <h1>New booking</h1>
+        <p>
+          For phone and walk-in bookings, or to add a guest to a departure that&apos;s already full (tick
+          &quot;Allow overbook&quot;).
+        </p>
+      </div>
 
-      <h2>Tour &amp; date range</h2>
-      <form method="get" style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-        <select name="tourId" defaultValue={tourId}>
-          {activeTours.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-        <label>
-          From <input type="date" name="fromDate" defaultValue={fromDate} />
-        </label>
-        <label>
-          To <input type="date" name="toDate" defaultValue={toDate} />
-        </label>
-        <button type="submit">Load sessions</button>
+      <form method="get" className="pr-dash-card" style={{ marginBottom: "16px" }}>
+        <h2>Find a departure</h2>
+        <div className="pr-dash-actions">
+          <select name="tourId" defaultValue={tourId} style={{ width: "auto" }}>
+            {activeTours.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+          <label className="pr-dash-field" style={{ flexDirection: "row", alignItems: "center", gap: "8px" }}>
+            From <input type="date" name="fromDate" defaultValue={fromDate} style={{ width: "auto" }} />
+          </label>
+          <label className="pr-dash-field" style={{ flexDirection: "row", alignItems: "center", gap: "8px" }}>
+            To <input type="date" name="toDate" defaultValue={toDate} style={{ width: "auto" }} />
+          </label>
+          <button type="submit" className="pr-dash-btn pr-dash-btn-ghost">
+            Load departures
+          </button>
+        </div>
       </form>
 
-      <h2>Booking details</h2>
       {sessions.length === 0 ? (
-        <p>No sessions in this date range for this tour.</p>
+        <div className="pr-dash-card">
+          <div className="pr-dash-empty">No departures in this date range for this tour.</div>
+        </div>
       ) : (
-        <form action={createStaffBooking} style={{ maxWidth: "480px", display: "grid", gap: "10px" }}>
+        <form action={createStaffBooking} className="pr-dash-form">
           <input type="hidden" name="tour_id" value={tourId} />
 
-          <label>
-            Session
-            <select name="tour_session_id" required defaultValue="" style={{ display: "block", width: "100%" }}>
-              <option value="" disabled>
-                Choose a date
-              </option>
-              {sessions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.date} -- {s.start_time} ({s.booked_count} / {s.capacity - s.allotment_hold} booked
-                  {s.is_blocked ? ", BLOCKED" : ""})
+          <div className="pr-dash-card">
+            <h2>Departure</h2>
+            <label className="pr-dash-field">
+              Date
+              <select name="tour_session_id" required defaultValue="">
+                <option value="" disabled>
+                  Choose a date
                 </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Guest name
-            <input name="guest_name" required maxLength={120} style={{ display: "block", width: "100%" }} />
-          </label>
-          <label>
-            Email
-            <input type="email" name="guest_email" style={{ display: "block", width: "100%" }} />
-          </label>
-          <label>
-            Phone
-            <input type="tel" name="guest_phone" maxLength={40} style={{ display: "block", width: "100%" }} />
-          </label>
-
-          <div style={{ display: "flex", gap: "12px" }}>
-            <label>
-              Adults
-              <input type="number" name="adults" min={0} max={20} defaultValue={2} style={{ width: "70px" }} />
-            </label>
-            <label>
-              Children
-              <input type="number" name="children" min={0} max={20} defaultValue={0} style={{ width: "70px" }} />
-            </label>
-            <label>
-              Infants
-              <input type="number" name="infants" min={0} max={20} defaultValue={0} style={{ width: "70px" }} />
+                {sessions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.date} -- {s.start_time} ({s.booked_count} / {s.capacity - s.allotment_hold} booked
+                    {s.is_blocked ? ", BLOCKED" : ""})
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
 
-          <label>
-            Pickup zone
-            <select name="pickup_zone_id" style={{ display: "block", width: "100%" }}>
-              <option value="">No pickup</option>
-              {pickupZones.map((z) => (
-                <option key={z.id} value={z.id}>
-                  {z.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Hotel
-            <input name="hotel" maxLength={200} style={{ display: "block", width: "100%" }} />
-          </label>
-          <label>
-            Add-on
-            <input name="addon_choice" maxLength={60} style={{ display: "block", width: "100%" }} />
-          </label>
-          <label>
-            Promo code
-            <input name="promo_code" maxLength={40} style={{ display: "block", width: "100%" }} />
-          </label>
+          <div className="pr-dash-card">
+            <h2>Guest</h2>
+            <div className="pr-dash-form">
+              <label className="pr-dash-field">
+                Name
+                <input name="guest_name" required maxLength={120} />
+              </label>
+              <label className="pr-dash-field">
+                Email
+                <input type="email" name="guest_email" />
+              </label>
+              <label className="pr-dash-field">
+                Phone
+                <input type="tel" name="guest_phone" maxLength={40} />
+              </label>
+              <div className="pr-dash-actions">
+                <label className="pr-dash-field" style={{ maxWidth: "110px" }}>
+                  Adults
+                  <input type="number" name="adults" min={0} max={20} defaultValue={2} />
+                </label>
+                <label className="pr-dash-field" style={{ maxWidth: "110px" }}>
+                  Children
+                  <input type="number" name="children" min={0} max={20} defaultValue={0} />
+                </label>
+                <label className="pr-dash-field" style={{ maxWidth: "110px" }}>
+                  Infants
+                  <input type="number" name="infants" min={0} max={20} defaultValue={0} />
+                </label>
+              </div>
+            </div>
+          </div>
 
-          <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <input type="checkbox" name="allow_overbook" /> Allow overbook (add this guest even if the session is
-            full)
-          </label>
+          <div className="pr-dash-card">
+            <h2>Trip details</h2>
+            <div className="pr-dash-form">
+              <label className="pr-dash-field">
+                Pickup zone
+                <select name="pickup_zone_id">
+                  <option value="">No pickup</option>
+                  {pickupZones.map((z) => (
+                    <option key={z.id} value={z.id}>
+                      {z.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="pr-dash-field">
+                Hotel
+                <input name="hotel" maxLength={200} />
+              </label>
+              <label className="pr-dash-field">
+                Add-on
+                <input name="addon_choice" maxLength={60} />
+              </label>
+              <label className="pr-dash-field">
+                Promo code
+                <input name="promo_code" maxLength={40} />
+              </label>
+            </div>
+          </div>
 
-          <button type="submit" style={{ width: "fit-content" }}>
-            Create booking
-          </button>
+          <div className="pr-dash-card">
+            <label className="pr-dash-check">
+              <input type="checkbox" name="allow_overbook" /> Allow overbook (add this guest even if the departure is
+              full)
+            </label>
+          </div>
+
+          <div className="pr-dash-actions">
+            <button type="submit" className="pr-dash-btn">
+              Create booking
+            </button>
+          </div>
         </form>
       )}
     </div>

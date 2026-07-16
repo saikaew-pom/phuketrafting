@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listBookings } from "@/lib/queries/bookings";
 import { baht } from "@/lib/format";
+import { STATUS_LABEL, STATUS_BADGE, PAYMENT_LABEL, PAYMENT_BADGE, SOURCE_LABEL } from "./labels";
 
 const STATUSES = ["pending", "confirmed", "completed", "cancelled", "no_show"] as const;
 
@@ -14,57 +15,81 @@ export default async function BookingsListPage({
 
   return (
     <div>
-      <h1>Bookings</h1>
-      <p>
-        <Link href="/dashboard/bookings/new">+ New booking</Link>
-      </p>
-      <form method="get" style={{ margin: "16px 0" }}>
-        <label>
-          Status{" "}
-          <select name="status" defaultValue={status ?? ""}>
-            <option value="">All</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </label>{" "}
-        <button type="submit">Filter</button>
+      <div className="pr-dash-head">
+        <h1>Bookings</h1>
+        <Link href="/dashboard/bookings/new" className="pr-dash-btn">
+          + New booking
+        </Link>
+      </div>
+
+      <form method="get" className="pr-dash-card" style={{ marginBottom: "16px" }}>
+        <div className="pr-dash-actions">
+          <label className="pr-dash-field" style={{ flexDirection: "row", alignItems: "center", gap: "10px" }}>
+            Status
+            <select name="status" defaultValue={status ?? ""} style={{ width: "auto" }}>
+              <option value="">All</option>
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {STATUS_LABEL[s]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" className="pr-dash-btn pr-dash-btn-ghost">
+            Filter
+          </button>
+        </div>
       </form>
-      <table style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead>
-          <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
-            <th style={{ padding: "8px" }}>Guest</th>
-            <th style={{ padding: "8px" }}>Type</th>
-            <th style={{ padding: "8px" }}>Product</th>
-            <th style={{ padding: "8px" }}>Date</th>
-            <th style={{ padding: "8px" }}>Status</th>
-            <th style={{ padding: "8px" }}>Payment</th>
-            <th style={{ padding: "8px" }}>Total</th>
-            <th style={{ padding: "8px" }}>Source</th>
-            <th style={{ padding: "8px" }}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {bookings.map((b) => (
-            <tr key={b.id} style={{ borderBottom: "1px solid #eee" }}>
-              <td style={{ padding: "8px" }}>{b.guest_name}</td>
-              <td style={{ padding: "8px" }}>{b.type}</td>
-              <td style={{ padding: "8px" }}>{b.product_name ?? "—"}</td>
-              <td style={{ padding: "8px" }}>{b.date ?? "—"}</td>
-              <td style={{ padding: "8px" }}>{b.status}</td>
-              <td style={{ padding: "8px" }}>{b.payment_status}</td>
-              <td style={{ padding: "8px" }}>{baht(b.total)}</td>
-              <td style={{ padding: "8px" }}>{b.source}</td>
-              <td style={{ padding: "8px" }}>
-                <Link href={`/dashboard/bookings/${b.id}`}>View</Link>
-              </td>
+
+      <div className="pr-dash-tablewrap">
+        <table className="pr-dash-table">
+          <thead>
+            <tr>
+              <th>Guest</th>
+              <th>Product</th>
+              <th>Date</th>
+              <th>Status</th>
+              <th>Payment</th>
+              <th>Total</th>
+              <th>Source</th>
+              <th></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {bookings.length === 0 && <p>No bookings{status ? ` with status "${status}"` : ""}.</p>}
+          </thead>
+          <tbody>
+            {bookings.map((b) => (
+              <tr key={b.id}>
+                <td>{b.guest_name}</td>
+                <td>{b.product_name ?? "--"}</td>
+                <td>{b.date ?? "--"}</td>
+                <td>
+                  <span className={"pr-dash-badge " + (STATUS_BADGE[b.status] ?? "pr-dash-badge-neutral")}>
+                    {STATUS_LABEL[b.status] ?? b.status}
+                  </span>
+                </td>
+                <td>
+                  <span className={"pr-dash-badge " + (PAYMENT_BADGE[b.payment_status] ?? "pr-dash-badge-neutral")}>
+                    {PAYMENT_LABEL[b.payment_status] ?? b.payment_status}
+                  </span>
+                </td>
+                <td>{baht(b.total)}</td>
+                <td>{SOURCE_LABEL[b.source] ?? b.source}</td>
+                <td>
+                  <Link href={`/dashboard/bookings/${b.id}`}>View</Link>
+                </td>
+              </tr>
+            ))}
+            {bookings.length === 0 && (
+              <tr>
+                <td colSpan={8}>
+                  <div className="pr-dash-empty">
+                    No bookings{status ? ` with status "${STATUS_LABEL[status] ?? status}"` : ""}.
+                  </div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
