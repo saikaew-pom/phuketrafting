@@ -110,6 +110,8 @@ export async function listAvailableTourSessions(
 
 export interface AdminTourSession extends AvailableTourSession {
   is_blocked: number;
+  /** Why staff closed this departure -- shown on the availability calendar. */
+  block_reason: string | null;
 }
 
 /**
@@ -128,7 +130,7 @@ export async function listTourSessionsForAdmin(
 ): Promise<AdminTourSession[]> {
   const { results } = await getDb()
     .prepare(
-      `SELECT id, date, start_time, capacity, booked_count, allotment_hold, is_blocked
+      `SELECT id, date, start_time, capacity, booked_count, allotment_hold, is_blocked, block_reason
          FROM tour_sessions
         WHERE tour_id = ?1
           AND date >= ?2 AND date <= ?3

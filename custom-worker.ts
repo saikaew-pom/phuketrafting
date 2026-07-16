@@ -2,6 +2,7 @@
 import handler from "./.open-next/worker.js";
 import { runScheduledNotifications } from "./src/lib/cron/scheduled-notifications";
 import { runExpirySweep } from "./src/lib/cron/expiry-sweeper";
+import { generateSessions } from "./src/lib/session-generator";
 
 export default {
   fetch: handler.fetch,
@@ -32,6 +33,28 @@ export default {
               // their own failures (see processBatch); this only catches a
               // failure of the batch machinery itself, e.g. D1 being down.
               console.error("scheduled-notifications failed", err);
+            })
+        );
+
+        // Rolls the bookable window forward one day (lib/session-generator.ts).
+        // Shares this trigger rather than adding a third cron: it's daily
+        // maintenance on the same cadence, and it's idempotent, so a missed or
+        // doubled run is harmless -- the next one simply fills the gap.
+        // Deliberately its own waitUntil: a notification failure must not stop
+        // the calendar from being generated, and vice versa.
+        ctx.waitUntil(
+          generateSessions(env.DB)
+            .then((result) => {
+              // Only log real work: on a steady-state day this creates exactly
+              // one new day's departures, and "created:0" every morning would
+              // be noise -- but created:0 with templates configured means the
+              // window has stopped moving, which is worth seeing.
+              if (result.created > 0) console.log("session-generator:", JSON.stringify(result));
+            })
+            .catch((err) => {
+              // Loud: if this keeps failing, the booking calendar quietly runs
+              // dry ~120 days later and the site shows "No open dates".
+              console.error("session-generator failed", err);
             })
         );
         break;

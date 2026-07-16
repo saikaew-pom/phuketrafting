@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarCheck, ClipboardList, Waves, Tent, Newspaper, Star, MapPin, Inbox, Settings } from "lucide-react";
+import { CalendarCheck, ClipboardList, CalendarRange, Waves, Tent, Newspaper, Star, MapPin, Inbox, Settings } from "lucide-react";
 
 const SECTIONS = [
   {
@@ -13,6 +13,12 @@ const SECTIONS = [
     icon: ClipboardList,
     title: "Day sheet",
     blurb: "Today's manifest, check-ins and pickups.",
+  },
+  {
+    href: "/dashboard/availability",
+    icon: CalendarRange,
+    title: "Availability",
+    blurb: "Open, close and resize departures.",
   },
   {
     href: "/dashboard/enquiries",
