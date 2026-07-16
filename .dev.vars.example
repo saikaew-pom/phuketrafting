@@ -30,7 +30,11 @@ CF_ACCESS_AUD=
 
 # AI (plan §8) -- Anthropic-compatible SDK with a baseURL override.
 MINIMAX_API_KEY=
-MINIMAX_BASE_URL=
+# MiniMax's Anthropic-compatible endpoint -- the SDK talks Anthropic's
+# /v1/messages shape against this baseURL (plan §1a). NOT a secret; the same
+# value in every environment. Verified working 15 Jul 2026 against the real
+# API (HTTP 200, model MiniMax-M2, tool_use supported).
+MINIMAX_BASE_URL=https://api.minimax.io/anthropic
 
 # Stripe (plan §4) -- Checkout Session + webhook.
 STRIPE_SECRET_KEY=

@@ -1,0 +1,141 @@
+import Anthropic from "@anthropic-ai/sdk";
+
+/**
+ * The single interface the rest of the app talks to for AI -- same
+ * one-module-owns-the-vendor stance as lib/payments.ts. Nothing outside this
+ * file imports the SDK, so the provider stays swappable.
+ *
+ * MiniMax speaks Anthropic's /v1/messages wire format at its own baseURL
+ * (plan §1a: "Anthropic-compatible SDK with baseURL override"), so the
+ * official SDK works unmodified.
+ */
+
+export interface AiConfig {
+  MINIMAX_API_KEY?: string;
+  MINIMAX_BASE_URL?: string;
+}
+
+/**
+ * MiniMax's Anthropic-compatible endpoint, if the env doesn't say otherwise.
+ *
+ * Not a secret -- it's the same public URL in every environment -- but it IS
+ * required, and it was empty in .dev.vars until this chunk. A default here
+ * means a missing var degrades to "works" rather than to a confusing 404 from
+ * `undefined` being used as a base URL.
+ */
+const DEFAULT_BASE_URL = "https://api.minimax.io/anthropic";
+
+/**
+ * MiniMax-M2 is a REASONING model: every response begins with one or more
+ * `thinking` blocks and only then emits `text`. Two consequences this file
+ * exists to absorb:
+ *   1. max_tokens must budget for the thinking, not just the answer. Verified
+ *      live: max_tokens=32 on "reply PONG" returned ONE thinking block, zero
+ *      text, and stop_reason='max_tokens' -- i.e. a silent empty answer that
+ *      looks exactly like a broken integration.
+ *   2. Callers must never concatenate all blocks blindly -- that would leak
+ *      the model's private reasoning to a guest.
+ */
+export const AI_MODEL = "MiniMax-M2";
+
+/**
+ * Plan §8: "All server-side, all with hard Promise.race timeouts (40-60s)
+ * failing open". A guest waiting on a hung model is worse than a guest told
+ * to use WhatsApp.
+ */
+const AI_TIMEOUT_MS = 45_000;
+
+function getClient(config: AiConfig): Anthropic | null {
+  const apiKey = config.MINIMAX_API_KEY;
+  if (!apiKey) return null;
+  return new Anthropic({
+    apiKey,
+    baseURL: config.MINIMAX_BASE_URL || DEFAULT_BASE_URL,
+    // The SDK's own retries are off: this call is awaited inside a guest's
+    // chat request, and the Promise.race below is the real deadline. Leaving
+    // retries on would let the SDK burn the whole budget re-sending a prompt
+    // MiniMax already charged us for -- the same reasoning as payments.ts's
+    // trimmed timeout/retry settings, but stricter because tokens cost money
+    // per attempt.
+    maxRetries: 0,
+  });
+}
+
+/**
+ * Extracts ONLY the guest-safe text blocks.
+ *
+ * Deliberately drops `thinking` blocks. They are the model's private
+ * reasoning -- rendering them to a guest would leak how the bot decides
+ * things, and on a booking flow that's a live prompt-injection aid. Also
+ * drops tool_use blocks, which are for the caller to act on, not to show.
+ */
+export function extractText(content: Anthropic.ContentBlock[]): string {
+  return content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("")
+    .trim();
+}
+
+export type AiToolCall = { id: string; name: string; input: unknown };
+
+export function extractToolCalls(content: Anthropic.ContentBlock[]): AiToolCall[] {
+  return content
+    .filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use")
+    .map((b) => ({ id: b.id, name: b.name, input: b.input }));
+}
+
+export interface AiReply {
+  text: string;
+  toolCalls: AiToolCall[];
+  inputTokens: number;
+  outputTokens: number;
+  stopReason: string | null;
+}
+
+export interface AiRequest {
+  system: string;
+  messages: Anthropic.MessageParam[];
+  tools?: Anthropic.Tool[];
+  /** Budget the thinking, not just the answer -- see AI_MODEL's comment. */
+  maxTokens?: number;
+}
+
+/**
+ * One model turn. Returns null when AI isn't configured, so callers treat
+ * "no chatbot" as a normal state (same contract as brevo/payments).
+ *
+ * THROWS on a real API failure or a timeout -- the caller decides what the
+ * guest sees. It must not invent a reply: a chatbot that silently answers
+ * "sorry, something went wrong" as if the model said it is indistinguishable
+ * from the model actually saying that.
+ */
+export async function aiComplete(request: AiRequest, config: AiConfig): Promise<AiReply | null> {
+  const client = getClient(config);
+  if (!client) return null;
+
+  const call = client.messages.create({
+    model: AI_MODEL,
+    max_tokens: request.maxTokens ?? 1500,
+    system: request.system,
+    messages: request.messages,
+    ...(request.tools?.length ? { tools: request.tools } : {}),
+  });
+
+  // Promise.race, not the SDK's timeout option: plan §8 mandates a hard
+  // ceiling regardless of what the client library does, and this also covers
+  // a socket that connects but never finishes.
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`AI request exceeded ${AI_TIMEOUT_MS}ms`)), AI_TIMEOUT_MS)
+  );
+
+  const message = await Promise.race([call, timeout]);
+
+  return {
+    text: extractText(message.content),
+    toolCalls: extractToolCalls(message.content),
+    inputTokens: message.usage.input_tokens,
+    outputTokens: message.usage.output_tokens,
+    stopReason: message.stop_reason,
+  };
+}
