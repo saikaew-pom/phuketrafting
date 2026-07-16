@@ -2500,8 +2500,12 @@ select.pr-input {
   font-size: 13.5px;
 }
 /* Weight, not colour: the sheet is printed in mono, so a colour-coded
-   "waivers outstanding" flag would vanish on paper. */
-.pr-sheet-flag {
+   "waivers outstanding" flag would vanish on paper. The darker ink is a
+   screen-only bonus on top of the weight, never the signal itself.
+   Selector is .pr-dash-table td.pr-sheet-flag, not .pr-sheet-flag, because
+   `.pr-dash-table td` (0,1,1) outranks a bare class (0,1,0) -- written the
+   short way the colour was a dead declaration that silently did nothing. */
+.pr-dash-table td.pr-sheet-flag {
   font-weight: 700;
   color: var(--ink);
 }
