@@ -154,8 +154,17 @@ INSERT INTO session_templates (id, tour_id, weekday, start_time, capacity) VALUE
 -- ones rather than inherit anything predictable from a committed seed file.
 -- ---------------------------------------------------------------------------
 
-DELETE FROM camp_units;
-
+-- NOT "DELETE FROM camp_units" first, unlike the templates above. Two
+-- reasons, and both bite precisely because the banner says these counts get
+-- corrected later:
+--   * bookings.camp_unit_id is a FK to this table, so once a single camp
+--     booking exists the DELETE fails outright -- the seed would break exactly
+--     when someone re-ran it to fix the numbers.
+--   * even without bookings it would silently drop any unit staff had added.
+-- ON CONFLICT DO NOTHING makes re-running a safe no-op. Correcting the real
+-- counts is therefore an EDIT (dashboard or SQL), not a re-run of this file:
+-- adding a tent means adding a row, removing one means is_active = 0, never a
+-- DELETE (history references it).
 INSERT INTO camp_units (id, zone_id, name, occupancy) VALUES
 ('unit-family-1','zone-family','Family Tent 1',5),
 ('unit-family-2','zone-family','Family Tent 2',5),
@@ -171,4 +180,5 @@ INSERT INTO camp_units (id, zone_id, name, occupancy) VALUES
 
 ('unit-private-1','zone-private','Private Tent 1',2),
 ('unit-private-2','zone-private','Private Tent 2',2),
-('unit-private-3','zone-private','Private Tent 3',2);
+('unit-private-3','zone-private','Private Tent 3',2)
+ON CONFLICT(id) DO NOTHING;

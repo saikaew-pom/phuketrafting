@@ -45,11 +45,21 @@ export default {
         ctx.waitUntil(
           generateSessions(env.DB)
             .then((result) => {
-              // Only log real work: on a steady-state day this creates exactly
-              // one new day's departures, and "created:0" every morning would
-              // be noise -- but created:0 with templates configured means the
-              // window has stopped moving, which is worth seeing.
-              if (result.created > 0) console.log("session-generator:", JSON.stringify(result));
+              // created:0 is the ALARM, not the noise, and it is the only
+              // silent way this can fail. The window is [today, today+120], so
+              // each daily run necessarily gains exactly one new day at the far
+              // edge: a healthy morning ALWAYS creates rows. created:0 means no
+              // active template produced a candidate -- every template
+              // deactivated, or its tour deactivated -- and nothing else in the
+              // system notices: the calendar keeps serving already-generated
+              // departures and only runs dry ~120 days later, by which point
+              // the cause is four months in the past. A throw is caught below;
+              // this is the case that throws nothing and looks like success.
+              if (result.created === 0) {
+                console.error("session-generator: created 0 departures -- window has STOPPED MOVING", JSON.stringify(result));
+              } else {
+                console.log("session-generator:", JSON.stringify(result));
+              }
             })
             .catch((err) => {
               // Loud: if this keeps failing, the booking calendar quietly runs

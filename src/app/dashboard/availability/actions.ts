@@ -38,13 +38,30 @@ export async function setSessionBlocked(sessionId: string, blocked: boolean, for
 /**
  * Adjust one departure's capacity.
  *
- * Refuses to go below what's already booked. The atomic claim in
- * scheduling.ts guards new bookings against capacity, but nothing stops this
- * form from setting capacity BELOW booked_count -- which wouldn't cancel
- * anyone, it would just make the session permanently, silently oversold, and
- * every later capacity check would read as full. Rejecting is right: staff
- * who genuinely need fewer seats must move or cancel the guests first, which
- * is a decision, not arithmetic.
+ * Refuses to leave the departure oversold. The atomic claim in scheduling.ts
+ * guards new bookings against capacity, but nothing stops this form from
+ * cutting capacity out from under seats that are already sold -- which
+ * wouldn't cancel anyone, it would just make the session permanently,
+ * silently oversold. Rejecting is right: staff who genuinely need fewer seats
+ * must move or cancel the guests first, which is a decision, not arithmetic.
+ *
+ * The invariant is the SAME one every other capacity check in the codebase
+ * uses -- `booked_count <= capacity - allotment_hold`, not `booked_count <=
+ * capacity`. Comparing against bare capacity let a session with an
+ * allotment_hold (seats reserved for GetYourGuide) be cut to exactly
+ * booked_count and still "pass", landing in precisely the oversold state this
+ * guard exists to prevent: listAvailableTourSessions then hides the departure,
+ * and -- worse -- claimTourSessionCapacity's release path (delta < 0) is
+ * guarded by the same expression, so guests on it could no longer even be
+ * cancelled off it.
+ *
+ * Guarded UPDATE rather than SELECT-then-UPDATE, the same pattern and the same
+ * reasoning as claimTourSessionCapacity: D1 has no BEGIN/COMMIT, so a separate
+ * check-then-write races a concurrent booking claiming a seat in the gap, and
+ * the write would happily commit a capacity that was valid when it was read
+ * and oversold by the time it landed. Folding the check into the write closes
+ * that gap; the read below is diagnostic only (for the error message), never
+ * used to decide anything.
  */
 export async function setSessionCapacity(sessionId: string, formData: FormData): Promise<void> {
   await requireStaff();
@@ -54,23 +71,32 @@ export async function setSessionCapacity(sessionId: string, formData: FormData):
   const capacity = Number(raw);
   if (!Number.isInteger(capacity) || capacity < 0) throw new Error("Capacity must be a whole number.");
 
-  const session = await getDb()
-    .prepare("SELECT booked_count FROM tour_sessions WHERE id = ?1")
-    .bind(sessionId)
-    .first<{ booked_count: number }>();
-  if (!session) throw new Error("That departure no longer exists.");
-  if (capacity < session.booked_count) {
-    throw new Error(
-      `${session.booked_count} guest${session.booked_count === 1 ? " is" : "s are"} already booked on this departure -- capacity can't go below that. Move or cancel them first.`
-    );
-  }
-
-  await getDb()
-    .prepare("UPDATE tour_sessions SET capacity = ?1, updated_at = unixepoch() WHERE id = ?2")
+  const result = await getDb()
+    .prepare(
+      `UPDATE tour_sessions
+          SET capacity = ?1, updated_at = unixepoch()
+        WHERE id = ?2
+          AND ?1 - allotment_hold >= booked_count`
+    )
     .bind(capacity, sessionId)
     .run();
+  if (result.meta.changes > 0) {
+    revalidatePath("/dashboard/availability");
+    return;
+  }
 
-  revalidatePath("/dashboard/availability");
+  // Zero rows changed -- work out *why* for a better message.
+  const session = await getDb()
+    .prepare("SELECT booked_count, allotment_hold FROM tour_sessions WHERE id = ?1")
+    .bind(sessionId)
+    .first<{ booked_count: number; allotment_hold: number }>();
+  if (!session) throw new Error("That departure no longer exists.");
+  const floor = session.booked_count + session.allotment_hold;
+  throw new Error(
+    `${session.booked_count} guest${session.booked_count === 1 ? " is" : "s are"} already booked on this departure` +
+      (session.allotment_hold > 0 ? ` and ${session.allotment_hold} seat(s) are held for agents` : "") +
+      ` -- capacity can't go below ${floor}. Move or cancel them first.`
+  );
 }
 
 /**

@@ -119,20 +119,27 @@ export default async function AvailabilityPage({
                     </td>
                     <td>
                       <form action={setSessionCapacity.bind(null, s.id)} className="pr-dash-actions">
-                        {/* min = booked_count, not 0: the action refuses a
-                            capacity below what's already booked (it would
-                            silently mark the departure permanently oversold),
-                            and refusing server-side means THROWING, whose
-                            message Next.js redacts in production -- staff
-                            would get an opaque "A server error occurred".
-                            Blocking it in the browser turns an expected
-                            mistake into an inline hint instead of a crash.
-                            The server guard stays as the real boundary. */}
+                        {/* min = booked_count + allotment_hold, not 0: the
+                            action refuses a capacity that would leave the
+                            departure oversold (it would silently mark it
+                            permanently full AND block guests from being
+                            cancelled off it), and refusing server-side means
+                            THROWING, whose message Next.js redacts in
+                            production -- staff would get an opaque "A server
+                            error occurred". Blocking it in the browser turns
+                            an expected mistake into an inline hint instead of
+                            a crash. Mirrors the server guard's floor exactly
+                            (`capacity - allotment_hold >= booked_count`); the
+                            server guard stays as the real boundary. */}
                         <input
                           type="number"
                           name="capacity"
-                          min={s.booked_count}
-                          title={s.booked_count > 0 ? `At least ${s.booked_count} -- that many guests are already booked.` : undefined}
+                          min={s.booked_count + s.allotment_hold}
+                          title={
+                            s.booked_count + s.allotment_hold > 0
+                              ? `At least ${s.booked_count + s.allotment_hold} -- ${s.booked_count} booked${s.allotment_hold > 0 ? ` plus ${s.allotment_hold} held for agents` : ""}.`
+                              : undefined
+                          }
                           defaultValue={s.capacity}
                           key={s.capacity}
                           style={{ width: "80px" }}
