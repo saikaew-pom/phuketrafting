@@ -18,8 +18,11 @@ export default function DashboardHome() {
         <li>
           <Link href="/dashboard/day-sheet">Day sheet</Link>
         </li>
+        <li>
+          <Link href="/dashboard/blog">Blog</Link>
+        </li>
       </ul>
-      <p>Notify buttons, and blog/conversations/reviews/settings screens land in later phases.</p>
+      <p>Conversations/reviews/settings screens land in later phases.</p>
     </div>
   );
 }
