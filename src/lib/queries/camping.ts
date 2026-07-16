@@ -100,3 +100,116 @@ export async function updateCampRatePrices(
     .bind(priceWeekday, priceWeekend, rateId)
     .run();
 }
+
+/* -------------------------------------------------------------------------
+ * Camp units -- the bookable inventory.
+ *
+ * A zone (Family / Outdoor / Private) is a *product*; a unit is the physical
+ * tent a guest actually sleeps in. Camp availability is an overlap check
+ * against these rows, NOT a seat counter -- see scheduling.ts's
+ * claimCampUnitBooking. That difference is why camping has no equivalent of
+ * the tour session generator: there is nothing to generate, the tent either
+ * exists or it doesn't, and it's free on a date iff no active booking spans it.
+ * ---------------------------------------------------------------------- */
+
+export interface CampUnit {
+  id: string;
+  zone_id: string;
+  name: string;
+  occupancy: number;
+  is_active: number;
+  is_blocked: number;
+  block_reason: string | null;
+  /**
+   * Bookings of ANY status ever attached to this unit -- the same population
+   * deleteCampUnit's guard counts, so the UI can hide a Delete button that the
+   * server would refuse. Deliberately not filtered to active statuses: the
+   * guard isn't about occupancy, it's about not destroying booking history.
+   */
+  booking_count: number;
+}
+
+export async function listCampUnits(zoneId: string): Promise<CampUnit[]> {
+  const { results } = await getDb()
+    .prepare(
+      `SELECT u.id, u.zone_id, u.name, u.occupancy, u.is_active, u.is_blocked, u.block_reason,
+              (SELECT COUNT(*) FROM bookings b WHERE b.camp_unit_id = u.id) AS booking_count
+         FROM camp_units u
+        WHERE u.zone_id = ?1
+        ORDER BY u.name`
+    )
+    .bind(zoneId)
+    .all<CampUnit>();
+  return results;
+}
+
+export async function createCampUnit(zoneId: string, name: string, occupancy: number): Promise<void> {
+  // `camp-<uuid8>` matches pickup.ts's id convention -- readable in a day
+  // sheet, unlike a bare UUID.
+  const id = `camp-${crypto.randomUUID().slice(0, 8)}`;
+  await getDb()
+    .prepare("INSERT INTO camp_units (id, zone_id, name, occupancy) VALUES (?1, ?2, ?3, ?4)")
+    .bind(id, zoneId, name, occupancy)
+    .run();
+}
+
+export interface CampUnitUpdate {
+  name: string;
+  occupancy: number;
+  is_active: boolean;
+}
+
+export async function updateCampUnit(id: string, update: CampUnitUpdate): Promise<void> {
+  await getDb()
+    .prepare(
+      `UPDATE camp_units
+          SET name = ?1, occupancy = ?2, is_active = ?3, updated_at = unixepoch()
+        WHERE id = ?4`
+    )
+    .bind(update.name, update.occupancy, update.is_active ? 1 : 0, id)
+    .run();
+}
+
+/**
+ * Block or unblock one unit -- the camp equivalent of closing a departure.
+ *
+ * Blocking does NOT cancel the bookings already on the unit: claimCampUnitBooking
+ * refuses new ones and listAvailableCampUnits stops offering it, but existing
+ * guests keep their reservation and staff still see them on the day sheet.
+ * That's deliberate -- "this tent is out of service" is a statement about
+ * future inventory, and silently voiding paid stays is never the right default.
+ * Staff cancel those bookings explicitly if that's what they mean.
+ */
+export async function setCampUnitBlocked(id: string, blocked: boolean, reason: string): Promise<number> {
+  const result = await getDb()
+    .prepare("UPDATE camp_units SET is_blocked = ?1, block_reason = ?2, updated_at = unixepoch() WHERE id = ?3")
+    .bind(blocked ? 1 : 0, blocked ? reason : null, id)
+    .run();
+  return result.meta.changes;
+}
+
+/**
+ * Deletes a unit only if no booking has ever referenced it.
+ *
+ * Guarded DELETE rather than SELECT-then-DELETE for the usual reason (D1 has
+ * no BEGIN/COMMIT, so a concurrent booking could land in the gap). The guard
+ * is ANY booking, not just active ones: bookings.camp_unit_id is a real FK, so
+ * deleting a unit with cancelled/past stays attached would either fail at the
+ * constraint or orphan booking history -- and that history is what a refund
+ * dispute is argued from. Staff who want a retired-but-booked tent gone from
+ * the site uncheck "Active" instead; that's what it's for.
+ *
+ * Returns false when the unit has bookings so the caller can say so, rather
+ * than reporting a silent no-op as success.
+ */
+export async function deleteCampUnit(id: string): Promise<boolean> {
+  const result = await getDb()
+    .prepare(
+      `DELETE FROM camp_units
+        WHERE id = ?1
+          AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.camp_unit_id = ?1)`
+    )
+    .bind(id)
+    .run();
+  return result.meta.changes > 0;
+}

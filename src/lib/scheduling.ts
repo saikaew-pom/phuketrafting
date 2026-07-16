@@ -317,6 +317,49 @@ export async function listAvailableCampUnits(
   return results;
 }
 
+export interface CampStay {
+  booking_id: string;
+  camp_unit_id: string;
+  check_in: string;
+  check_out: string;
+  status: string;
+  guest_name: string | null;
+}
+
+/**
+ * Every active stay touching [fromDate, toDate) across a zone's units -- the
+ * data behind the camp availability calendar.
+ *
+ * Overlap, not containment: a stay that started before the window and ends
+ * inside it still occupies its nights, so filtering on `check_in >= fromDate`
+ * would render those nights free and invite a double-booking that
+ * claimCampUnitBooking would then (correctly) refuse -- staff would see a
+ * calendar that disagrees with the booking form. Same half-open comparison as
+ * every other camp availability check here.
+ *
+ * A read for display only. The guarded INSERT remains the boundary.
+ */
+export async function listCampStaysForAdmin(
+  zoneId: string,
+  fromDate: string,
+  toDate: string
+): Promise<CampStay[]> {
+  const { results } = await getDb()
+    .prepare(
+      `SELECT b.id AS booking_id, b.camp_unit_id, b.check_in, b.check_out, b.status, b.guest_name
+         FROM bookings b
+         JOIN camp_units u ON u.id = b.camp_unit_id
+        WHERE u.zone_id = ?
+          AND b.status IN (${ACTIVE_BOOKING_STATUSES.map(() => "?").join(",")})
+          AND b.check_in < ?
+          AND b.check_out > ?
+        ORDER BY b.check_in`
+    )
+    .bind(zoneId, ...ACTIVE_BOOKING_STATUSES, toDate, fromDate)
+    .all<CampStay>();
+  return results;
+}
+
 export interface CampAvailabilityWindow {
   campUnitId: string;
   checkIn: string;

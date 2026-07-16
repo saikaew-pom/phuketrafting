@@ -2696,3 +2696,84 @@ select.pr-input {
     border-radius: 0;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Camp availability grid (/dashboard/availability/camping).
+ *
+ * Tents x nights. Unlike the tour session calendar this is a matrix, because a
+ * camp stay spans a range of nights rather than sitting on one date -- one
+ * booking paints several cells across a row.
+ *
+ * Colour is never the only signal: every cell carries a title= naming what it
+ * is, and booked cells hold a real glyph, so the grid still reads for a
+ * colour-blind user and on a greyscale print of the day sheet.
+ * ------------------------------------------------------------------------- */
+.pr-camp-grid {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.pr-camp-grid th.pr-camp-night {
+  padding: 6px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-3);
+  text-align: center;
+  min-width: 22px;
+}
+/* The tent name stays put while the nights scroll under it -- a 90-night
+   window is far wider than any screen, and an unlabelled row is useless. */
+.pr-camp-grid .pr-camp-unitcol {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
+  white-space: nowrap;
+  border-right: 1px solid var(--line-2);
+}
+.pr-camp-cell {
+  padding: 0;
+  height: 26px;
+  min-width: 22px;
+  text-align: center;
+  border: 1px solid var(--bg);
+}
+.pr-camp-cell a {
+  display: block;
+  line-height: 26px;
+  color: inherit;
+  text-decoration: none;
+}
+.pr-camp-free {
+  background: var(--green-soft);
+}
+.pr-camp-booked {
+  background: var(--accent);
+  color: #fff;
+}
+.pr-camp-blocked {
+  background: var(--line-2);
+  /* Hatching, so "out of service" is distinguishable from "hidden" without
+     relying on the two greys being told apart. */
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 3px,
+    rgba(20, 25, 28, 0.28) 3px,
+    rgba(20, 25, 28, 0.28) 6px
+  );
+}
+.pr-camp-hidden {
+  background: var(--bg-tint);
+}
+.pr-camp-key {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  margin: 0 6px 0 16px;
+  vertical-align: -1px;
+  /* Outlined: the "hidden" swatch is --bg-tint, which is invisible against the
+     white card without a border -- a legend entry nobody can see is worse than
+     no legend, since it reads as a typo rather than a colour. */
+  border: 1px solid var(--line-2);
+}

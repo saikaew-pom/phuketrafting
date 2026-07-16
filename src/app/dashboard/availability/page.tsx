@@ -168,7 +168,15 @@ export default async function AvailabilityPage({
                         </form>
                       ) : (
                         <form action={setSessionBlocked.bind(null, s.id, true)} className="pr-dash-actions">
-                          <input name="block_reason" placeholder="Reason, e.g. river too high" style={{ width: "180px" }} />
+                          {/* required for the same reason as the capacity min
+                              above: setSessionBlocked rejects a blank reason by
+                              throwing, and production redacts that message. */}
+                          <input
+                            name="block_reason"
+                            placeholder="Reason, e.g. river too high"
+                            required
+                            style={{ width: "180px" }}
+                          />
                           <button type="submit" className="pr-dash-btn pr-dash-btn-danger pr-dash-btn-sm">
                             Close
                           </button>

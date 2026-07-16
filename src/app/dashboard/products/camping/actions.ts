@@ -1,7 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { updateCampZone, updateCampRatePrices } from "@/lib/queries/camping";
+import {
+  updateCampZone,
+  updateCampRatePrices,
+  createCampUnit,
+  updateCampUnit,
+  setCampUnitBlocked,
+  deleteCampUnit,
+} from "@/lib/queries/camping";
 import { requireStaff } from "@/lib/access";
 
 export async function saveCampZone(zoneId: string, formData: FormData) {
@@ -54,4 +61,86 @@ export async function saveCampZone(zoneId: string, formData: FormData) {
 
   revalidatePath("/dashboard/products/camping");
   revalidatePath(`/dashboard/products/camping/${zoneId}`);
+}
+
+/* -------------------------------------------------------------------------
+ * Camp units -- the physical tents. A zone is the product; these are the
+ * inventory rows camp availability is actually checked against
+ * (scheduling.ts's claimCampUnitBooking). Without these screens a zone can be
+ * priced and photographed but has nothing to sell.
+ * ---------------------------------------------------------------------- */
+
+function parseOccupancy(formData: FormData): number {
+  // Blank rejected, not coerced -- Number("") is 0, and an occupancy-0 tent
+  // would be sold to nobody while still looking like real inventory. Same
+  // reasoning as the blank-price guard above.
+  const raw = String(formData.get("occupancy") ?? "").trim();
+  if (!raw) throw new Error("Occupancy is required.");
+  const occupancy = Number(raw);
+  if (!Number.isInteger(occupancy) || occupancy < 1) {
+    throw new Error("Occupancy must be a whole number of at least 1.");
+  }
+  return occupancy;
+}
+
+function revalidateZone(zoneId: string): void {
+  revalidatePath(`/dashboard/products/camping/${zoneId}`);
+  // The camp calendar reads these same rows -- a unit blocked here must not
+  // keep showing as bookable there.
+  revalidatePath("/dashboard/availability/camping");
+}
+
+export async function addCampUnit(zoneId: string, formData: FormData): Promise<void> {
+  await requireStaff();
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) throw new Error("Give the tent a name -- it's what staff read on the day sheet.");
+
+  await createCampUnit(zoneId, name, parseOccupancy(formData));
+  revalidateZone(zoneId);
+}
+
+export async function saveCampUnit(zoneId: string, unitId: string, formData: FormData): Promise<void> {
+  await requireStaff();
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) throw new Error("Name is required.");
+
+  await updateCampUnit(unitId, {
+    name,
+    occupancy: parseOccupancy(formData),
+    is_active: formData.get("is_active") === "on",
+  });
+  revalidateZone(zoneId);
+}
+
+export async function toggleCampUnitBlocked(
+  zoneId: string,
+  unitId: string,
+  blocked: boolean,
+  formData: FormData
+): Promise<void> {
+  await requireStaff();
+
+  const reason = String(formData.get("block_reason") ?? "").trim();
+  if (blocked && !reason) {
+    throw new Error("Give a reason -- it's what staff see later when asking why this tent is out.");
+  }
+
+  const changes = await setCampUnitBlocked(unitId, blocked, reason);
+  if (changes === 0) throw new Error("That tent no longer exists.");
+  revalidateZone(zoneId);
+}
+
+export async function removeCampUnit(zoneId: string, unitId: string): Promise<void> {
+  await requireStaff();
+
+  const deleted = await deleteCampUnit(unitId);
+  if (!deleted) {
+    throw new Error(
+      "This tent has bookings against it, so deleting it would take their history with it. " +
+        "Uncheck “Active” instead -- it stops being sold but the records stay."
+    );
+  }
+  revalidateZone(zoneId);
 }
