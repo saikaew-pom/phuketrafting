@@ -3,7 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/access";
-import { writePolicies, type PaymentMode, type PaymentPolicy, type ChatPolicy } from "@/lib/queries/settings";
+import {
+  writePolicies,
+  writeSiteStats,
+  type PaymentMode,
+  type PaymentPolicy,
+  type ChatPolicy,
+  type SiteStats,
+} from "@/lib/queries/settings";
 
 const VALID_MODES: readonly PaymentMode[] = ["deposit", "full_prepay", "pay_on_day"];
 
@@ -65,9 +72,20 @@ export async function saveSettings(formData: FormData): Promise<void> {
     dailyTokenCap,
   };
 
+  // The business's headline claims. Free text, not numbers: "1,200+" isn't a
+  // number, and nothing here can verify a Google rating anyway -- the point is
+  // that staff can correct them, not that we validate them.
+  const stats: SiteStats = {
+    googleRating: String(formData.get("stat_google_rating") ?? "").trim(),
+    reviewCount: String(formData.get("stat_review_count") ?? "").trim(),
+    travelerCount: String(formData.get("stat_traveler_count") ?? "").trim(),
+    sinceYear: String(formData.get("stat_since_year") ?? "").trim(),
+  };
+
   // One transaction: the form saves both, so both must land or neither --
   // see writePolicies on why a half-applied save is the bad case.
   await writePolicies(paymentPolicy, chatPolicy, staff.email);
+  await writeSiteStats(stats, staff.email);
 
   revalidatePath("/dashboard/settings");
   redirect("/dashboard/settings?saved=1");

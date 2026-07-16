@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { Star, Zap } from "lucide-react";
 import { baht } from "@/lib/format";
+import type { SiteStats } from "@/lib/queries/settings";
 
-export function StickyBar({ fromPrice }: { fromPrice: number }) {
+export function StickyBar({ fromPrice, stats }: { fromPrice: number; stats: SiteStats }) {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
@@ -18,7 +19,7 @@ export function StickyBar({ fromPrice }: { fromPrice: number }) {
       <div>
         <span className="pr-sticky-from">From {baht(fromPrice)}</span>
         <span className="pr-sticky-sub">
-          <Star size={12} className="pr-ico pr-star-on" /> 4.9 · Free cancellation
+          <Star size={12} className="pr-ico pr-star-on" /> {stats.googleRating} · Free cancellation
         </span>
       </div>
       {/* The booking form, not WhatsApp. A button labelled "Book now" on a

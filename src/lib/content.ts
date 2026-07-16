@@ -20,8 +20,11 @@ export const WHY = [
   },
   {
     icon: "Users",
-    title: "5,000+ happy travelers",
-    text: "Families, couples and backpackers -- rated 4.9★ across 1,200 reviews.",
+    // {travelerCount}/{googleRating}/{reviewCount} are filled from settings by
+    // WhyUs -- these numbers were hardcoded here AND in four other components,
+    // so the same claim could drift between them. See getSiteStats.
+    title: "{travelerCount} happy travelers",
+    text: "Families, couples and backpackers -- rated {googleRating}★ across {reviewCount} reviews.",
   },
   {
     icon: "Leaf",
@@ -98,9 +101,3 @@ export const FAQS = [
   },
 ] as const;
 
-export const PR_STATS = [
-  { value: "4.9★", label: "Google rating" },
-  { value: "1,200+", label: "Reviews" },
-  { value: "5,000+", label: "Travelers" },
-  { value: "Since 2002", label: "20+ years" },
-] as const;

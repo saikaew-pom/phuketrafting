@@ -3,6 +3,7 @@ import { listTours, getTourRates, parseIncludes } from "@/lib/queries/tours";
 import { listCampZones, getMinCampRate } from "@/lib/queries/camping";
 import { listPublishedReviews, listTourReviewStats } from "@/lib/queries/reviews";
 import { listPickupZones } from "@/lib/queries/pickup";
+import { getSiteStats } from "@/lib/queries/settings";
 import { SITE_URL, BUSINESS_NAME } from "@/lib/site";
 import { SUPPORTED_LOCALES, DEFAULT_LOCALE } from "@/lib/i18n";
 import { serializeJsonLd, buildOrganizationJsonLd, buildProductsJsonLd, buildFaqJsonLd } from "@/lib/jsonld";
@@ -82,6 +83,7 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
     listTourReviewStats(),
     listPickupZones(),
   ]);
+  const siteStats = await getSiteStats();
 
   // listTours()/listCampZones() return every row, active or not (the
   // dashboard listing needs inactive rows too, to let staff re-enable them)
@@ -151,18 +153,18 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
       {jsonLd.map((entry, i) => (
         <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(entry) }} />
       ))}
-      <Hero tours={bookingTours} pickupZones={pickupZones} locale={lang} />
-      <TrustBar />
+      <Hero tours={bookingTours} pickupZones={pickupZones} locale={lang} stats={siteStats} />
+      <TrustBar stats={siteStats} />
       <Tours tours={tourCards} camping={camping} />
       {activeCampZones.length > 0 && <CampBookingSection zones={activeCampZones} locale={lang} />}
       <HowItWorks />
-      <WhyUs />
-      <Reviews reviews={reviewCards} />
+      <WhyUs stats={siteStats} />
+      <Reviews reviews={reviewCards} stats={siteStats} />
       <Gallery />
       <FAQ />
       <EnquirySection locale={lang} />
       <FinalCTA />
-      <StickyBar fromPrice={Number.isFinite(stickyFromPrice) ? stickyFromPrice : 0} />
+      <StickyBar fromPrice={Number.isFinite(stickyFromPrice) ? stickyFromPrice : 0} stats={siteStats} />
     </>
   );
 }

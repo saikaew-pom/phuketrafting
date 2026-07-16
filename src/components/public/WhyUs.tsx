@@ -1,5 +1,6 @@
 import { ShieldCheck, ShowerHead, HardHat, Users, Leaf, Headset, MessageCircle, type LucideIcon } from "lucide-react";
 import { WHY } from "@/lib/content";
+import type { SiteStats } from "@/lib/queries/settings";
 import { waLink } from "@/lib/whatsapp";
 import { SectionHead } from "@/components/public/SectionHead";
 
@@ -12,7 +13,15 @@ const ICONS: Record<string, LucideIcon> = {
   Headset,
 };
 
-export function WhyUs() {
+/** Fills the {placeholders} in WHY's copy from the one shared stats source. */
+function fill(text: string, stats: SiteStats): string {
+  return text
+    .replace(/\{travelerCount\}/g, stats.travelerCount)
+    .replace(/\{googleRating\}/g, stats.googleRating)
+    .replace(/\{reviewCount\}/g, stats.reviewCount);
+}
+
+export function WhyUs({ stats }: { stats: SiteStats }) {
   return (
     <section className="pr-section" id="why">
       <div className="pr-wrap">
@@ -45,8 +54,8 @@ export function WhyUs() {
                   <div className="pr-why-ico">
                     <WhyIcon size={22} className="pr-ico" />
                   </div>
-                  <h3>{w.title}</h3>
-                  <p>{w.text}</p>
+                  <h3>{fill(w.title, stats)}</h3>
+                  <p>{fill(w.text, stats)}</p>
                 </div>
               );
             })}

@@ -3,6 +3,7 @@ import { ShieldCheck, ShowerHead, BadgeCheck, Zap, Play } from "lucide-react";
 import { Stars } from "@/components/public/Stars";
 import { BookingWidget, type BookingTourOption } from "@/components/public/BookingWidget";
 import type { PickupZone } from "@/lib/queries/pickup";
+import type { SiteStats } from "@/lib/queries/settings";
 
 const HERO_IMAGE_ID = "au7evtgufphh8vmfyaor";
 
@@ -10,9 +11,12 @@ export function Hero({
   tours,
   pickupZones,
   locale,
+  stats,
 }: {
   tours: BookingTourOption[];
   pickupZones: PickupZone[];
+  /** Headline claims -- shared with TrustBar/Reviews/Footer so they can't disagree. */
+  stats: SiteStats;
   locale: string;
 }) {
   return (
@@ -24,7 +28,8 @@ export function Hero({
       <div className="pr-hero-inner">
         <div className="pr-hero-copy">
           <span className="pr-pill pr-pill-glass">
-            <Stars n={4.9} size={13} /> 4.9 · 1,200+ reviews · Since 2002
+            <Stars n={Number(stats.googleRating) || 5} size={13} /> {stats.googleRating} · {stats.reviewCount} reviews ·
+            Since {stats.sinceYear}
           </span>
           <h1 className="pr-hero-h1">
             Swap a lazy beach day for an <em>unforgettable</em> rush.

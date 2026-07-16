@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/access";
-import { getPaymentPolicy, getChatPolicy } from "@/lib/queries/settings";
+import { getPaymentPolicy, getChatPolicy, getSiteStats } from "@/lib/queries/settings";
 import { getChatSpend } from "@/lib/queries/chat-spend";
 import { saveSettings } from "./actions";
 
@@ -17,10 +17,11 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     notFound();
   }
 
-  const [payment, chat, spend, { saved }] = await Promise.all([
+  const [payment, chat, spend, stats, { saved }] = await Promise.all([
     getPaymentPolicy(),
     getChatPolicy(),
     getChatSpend(),
+    getSiteStats(),
     searchParams,
   ]);
 
@@ -86,6 +87,33 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                 When the day&apos;s budget is used up, the assistant politely points guests to WhatsApp instead. Used today:{" "}
                 {spend.tokens.toLocaleString()} tokens.
               </span>
+            </label>
+          </div>
+        </div>
+
+        <div className="pr-dash-card">
+          <h2>Headline stats</h2>
+          <p className="pr-dash-field-hint" style={{ marginBottom: "12px" }}>
+            Shown across the top of the home page, in the hero, in the reviews header and in the footer -- all from
+            these four values, so they can&apos;t disagree with each other. These are business facts nothing here can
+            verify (your Google rating lives in Google Business Profile), so please keep them true.
+          </p>
+          <div className="pr-dash-form">
+            <label className="pr-dash-field" style={{ maxWidth: "220px" }}>
+              Google rating
+              <input name="stat_google_rating" defaultValue={stats.googleRating} placeholder="4.9" />
+            </label>
+            <label className="pr-dash-field" style={{ maxWidth: "220px" }}>
+              Review count
+              <input name="stat_review_count" defaultValue={stats.reviewCount} placeholder="1,200+" />
+            </label>
+            <label className="pr-dash-field" style={{ maxWidth: "220px" }}>
+              Travellers served
+              <input name="stat_traveler_count" defaultValue={stats.travelerCount} placeholder="5,000+" />
+            </label>
+            <label className="pr-dash-field" style={{ maxWidth: "220px" }}>
+              Operating since (year)
+              <input name="stat_since_year" defaultValue={stats.sinceYear} placeholder="2002" />
             </label>
           </div>
         </div>

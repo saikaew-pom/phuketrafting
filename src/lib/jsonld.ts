@@ -1,5 +1,5 @@
 import { SITE_URL, BUSINESS_NAME, BUSINESS_PHONE } from "@/lib/site";
-import { PR_STATS, FAQS } from "@/lib/content";
+import { FAQS } from "@/lib/content";
 import { cloudinaryUrl } from "@/lib/cloudinary";
 import type { TourCard } from "@/components/public/Tours";
 
@@ -14,17 +14,27 @@ export function serializeJsonLd(data: unknown): string {
   return JSON.stringify(data).replace(/</g, "\\u003c");
 }
 
-function parseStat(value: string): number | null {
-  // Strip thousands separators first -- "1,200+".match(/[\d.]+/) stops at
-  // the comma and silently returns "1", not 1200.
-  const match = value.replace(/,/g, "").match(/[\d.]+/);
-  return match ? Number(match[0]) : null;
-}
-
+/**
+ * Deliberately emits NO aggregateRating.
+ *
+ * It used to publish one built from the hardcoded PR_STATS array -- telling
+ * Google "4.9 stars from 1,200 reviews" on the authority of numbers typed
+ * into a source file. Google's structured-data policy requires review markup
+ * to reflect genuine reviews collected and shown by the site; unverifiable
+ * aggregate ratings are exactly what earns a manual action, and the risk is
+ * asymmetric (a rich-result star vs. the whole domain's eligibility).
+ *
+ * Not fixed by pointing it at our own `reviews` table either: that holds a
+ * handful of curated site testimonials, while the claim says *Google* rating
+ * -- a different population living in Google Business Profile. Deriving one
+ * from the other would be a tidier-looking version of the same lie.
+ *
+ * Per-tour Product markup DOES carry aggregateRating (see
+ * buildProductsJsonLd) because those numbers come from listTourReviewStats --
+ * real reviews, really rendered on the page they describe. That is the
+ * distinction the policy actually draws.
+ */
 export function buildOrganizationJsonLd() {
-  const ratingValue = parseStat(PR_STATS.find((s) => s.label === "Google rating")?.value ?? "");
-  const reviewCount = parseStat(PR_STATS.find((s) => s.label === "Reviews")?.value ?? "");
-
   return {
     "@context": "https://schema.org",
     "@type": "TouristAttraction",
@@ -36,15 +46,6 @@ export function buildOrganizationJsonLd() {
       addressLocality: "Phang Nga",
       addressCountry: "TH",
     },
-    ...(ratingValue != null && reviewCount != null
-      ? {
-          aggregateRating: {
-            "@type": "AggregateRating",
-            ratingValue,
-            reviewCount,
-          },
-        }
-      : {}),
   };
 }
 

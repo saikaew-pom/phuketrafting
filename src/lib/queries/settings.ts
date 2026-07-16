@@ -288,3 +288,67 @@ export async function writePolicies(
     db.prepare(UPSERT_SETTING).bind(CHAT_POLICY_KEY, JSON.stringify(chat), updatedBy),
   ]);
 }
+
+/**
+ * The business's headline claims: Google rating, review count, travellers
+ * served, founding year.
+ *
+ * These were hardcoded in FIVE places -- lib/content.ts's PR_STATS, the Hero
+ * pill, the Footer strapline, and twice in the Reviews header -- so the same
+ * claim could (and did) drift between them, and staff couldn't correct any of
+ * it without a deploy. They sat next to per-tour ratings this app computes
+ * from REAL reviews (listTourReviewStats), whose own comment says stats are
+ * used "instead of fabricated marketing numbers".
+ *
+ * Modelled as NAMED facts rather than a positional list precisely because
+ * four different components need specific ones: a list would let the Hero and
+ * the TrustBar disagree about the rating again, which is the bug.
+ *
+ * They live in settings, not derived from our `reviews` table, because that
+ * would be a different lie: a *Google* rating lives in Google Business
+ * Profile, and our reviews table holds curated site testimonials -- a
+ * different population. Staff type what's true; nothing here can check it,
+ * which is exactly why they must be editable.
+ */
+export interface SiteStats {
+  /** e.g. "4.9" -- from Google Business Profile, which this app cannot read. */
+  googleRating: string;
+  /** e.g. "1,200+" -- free text, because "1,200+" is not a number. */
+  reviewCount: string;
+  /** e.g. "5,000+" */
+  travelerCount: string;
+  /** e.g. "2002" */
+  sinceYear: string;
+}
+
+export const DEFAULT_SITE_STATS: SiteStats = {
+  googleRating: "4.9",
+  reviewCount: "1,200+",
+  travelerCount: "5,000+",
+  sinceYear: "2002",
+};
+
+const SITE_STATS_KEY = "site_stats";
+
+export async function getSiteStats(dbOverride?: D1Database): Promise<SiteStats> {
+  const raw = await readSetting(SITE_STATS_KEY, dbOverride);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return DEFAULT_SITE_STATS;
+  const v = raw as Record<string, unknown>;
+
+  // Each field independently validated and defaulted, same stance as every
+  // other getter here: one bad field must not blank the whole trust bar.
+  const str = (key: keyof SiteStats): string => {
+    const value = v[key];
+    return typeof value === "string" && value.trim() !== "" ? value.trim() : DEFAULT_SITE_STATS[key];
+  };
+  return {
+    googleRating: str("googleRating"),
+    reviewCount: str("reviewCount"),
+    travelerCount: str("travelerCount"),
+    sinceYear: str("sinceYear"),
+  };
+}
+
+export async function writeSiteStats(stats: SiteStats, updatedBy: string): Promise<void> {
+  await getDb().prepare(UPSERT_SETTING).bind(SITE_STATS_KEY, JSON.stringify(stats), updatedBy).run();
+}

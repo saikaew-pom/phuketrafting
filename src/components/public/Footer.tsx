@@ -2,8 +2,10 @@ import Link from "next/link";
 import { MessageCircle, MapPin, Clock } from "lucide-react";
 import { waLink } from "@/lib/whatsapp";
 import { listTours } from "@/lib/queries/tours";
+import { getSiteStats } from "@/lib/queries/settings";
 
 export async function Footer({ locale }: { locale: string }) {
+  const stats = await getSiteStats();
   const tours = await listTours();
 
   return (
@@ -61,7 +63,7 @@ export async function Footer({ locale }: { locale: string }) {
           <Link href={`/${locale}/terms`}>Terms</Link>
           <Link href={`/${locale}/waiver`}>Waiver</Link>
         </span>
-        <span>Rated 4.9&#9733; by 1,200+ travelers</span>
+        <span>Rated {stats.googleRating}&#9733; by {stats.reviewCount} travelers</span>
       </div>
     </footer>
   );
