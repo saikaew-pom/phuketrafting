@@ -6,6 +6,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { createCampBooking } from "@/lib/booking";
 import { openCheckoutForBooking } from "@/lib/checkout";
+import { sendBookingAck } from "@/lib/booking-ack";
 import { calculateCampPrice, type PriceBreakdown } from "@/lib/pricing";
 import { listAvailableCampUnits, type AvailableCampUnit } from "@/lib/scheduling";
 import { getCampRates, type CampRate } from "@/lib/queries/camping";
@@ -176,6 +177,12 @@ export async function submitCampBooking(
       };
       return { status: "error", message: messages[result.reason ?? ""] ?? "Something went wrong -- please try WhatsApp instead." };
     }
+
+    // Same acknowledgement the tour flow sends -- a camp guest who books and
+    // hears nothing is the same bug. Awaited (never fire-and-forget) because
+    // the Worker can be torn down as soon as this returns; sendBookingAck
+    // never throws, so a mail failure can't fail the booking.
+    await sendBookingAck(result.bookingId!, requestHeaders.get("host"));
 
     return {
       status: "success",

@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { MapPin, MessageCircle } from "lucide-react";
+import { MapPin, MessageCircle, CalendarCheck } from "lucide-react";
 import { waLink } from "@/lib/whatsapp";
 
 const FINALCTA_IMAGE_ID = "nefv70opn9cdgw7un7nw";
@@ -18,13 +18,12 @@ export function FinalCTA() {
         <h2>Your jungle adventure is one message away.</h2>
         <p>Reserve your date free, pay on the day, and let the pros handle the rest. Let&apos;s go wild.</p>
         <div className="pr-finalcta-actions">
-          <a
-            className="pr-btn pr-btn-accent pr-btn-lg"
-            href={waLink("Hi! I'd like to book an adventure.")}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <MessageCircle size={18} className="pr-ico" /> Reserve your spot
+          {/* The booking form, not a chat. This is the page's closing CTA --
+              "Reserve your spot" opening WhatsApp meant the last thing a
+              convinced guest clicked never reached the booking engine. The
+              WhatsApp option stays alongside it for people who'd rather talk. */}
+          <a className="pr-btn pr-btn-accent pr-btn-lg" href="#top">
+            <CalendarCheck size={18} className="pr-ico" /> Reserve your spot
           </a>
           <a
             className="pr-btn pr-btn-glass pr-btn-lg"

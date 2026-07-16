@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { Star, Zap } from "lucide-react";
 import { baht } from "@/lib/format";
-import { waLink } from "@/lib/whatsapp";
 
 export function StickyBar({ fromPrice }: { fromPrice: number }) {
   const [show, setShow] = useState(false);
@@ -22,12 +21,10 @@ export function StickyBar({ fromPrice }: { fromPrice: number }) {
           <Star size={12} className="pr-ico pr-star-on" /> 4.9 · Free cancellation
         </span>
       </div>
-      <a
-        className="pr-btn pr-btn-accent"
-        href={waLink("Hi! I'd like to book an adventure.")}
-        target="_blank"
-        rel="noreferrer"
-      >
+      {/* The booking form, not WhatsApp. A button labelled "Book now" on a
+          site with a working booking engine has to reach it -- this opened a
+          chat instead. */}
+      <a className="pr-btn pr-btn-accent" href="#top">
         <Zap size={16} className="pr-ico" /> Book now
       </a>
     </div>

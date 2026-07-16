@@ -1,8 +1,9 @@
 import Image from "next/image";
-import { Star, Clock, Users, Check, ArrowRight, LayoutGrid, Info } from "lucide-react";
+import { Star, Clock, Users, Check, ArrowRight, Info } from "lucide-react";
 import { baht } from "@/lib/format";
 import { waLink } from "@/lib/whatsapp";
 import { SectionHead } from "@/components/public/SectionHead";
+import { CompareTable } from "@/components/public/CompareTable";
 
 export interface TourCard {
   id: string;
@@ -88,12 +89,12 @@ export function Tours({ tours, camping }: { tours: TourCard[]; camping: CampingT
                     <span className="pr-tcard-amt">{baht(tour.fromPrice)}</span>
                     <span className="pr-tcard-per">/ person</span>
                   </div>
-                  <a
-                    className="pr-btn pr-btn-accent"
-                    href={waLink(`Hi! I'd like to book ${tour.name} (${tour.tagline ?? ""}).`)}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
+                  {/* Goes to the booking form with THIS tour preselected
+                      (BookingWidget listens for #book-<id>). It used to open
+                      WhatsApp: a button labelled "Book", on a site with a
+                      working booking engine, that never reached the booking
+                      form. */}
+                  <a className="pr-btn pr-btn-accent" href={`#book-${tour.id}`}>
                     Book
                     <ArrowRight size={16} className="pr-ico" />
                   </a>
@@ -153,14 +154,9 @@ export function Tours({ tours, camping }: { tours: TourCard[]; camping: CampingT
           )}
         </div>
         <div className="pr-tours-cta">
-          <a
-            className="pr-btn pr-btn-dark pr-btn-lg"
-            href={waLink("Hi! Can you send me all your tour packages and prices?")}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <LayoutGrid size={17} className="pr-ico" /> Compare all packages
-          </a>
+          {/* A real comparison built from the same DB fields as the cards --
+              this was a WhatsApp link asking staff to compile it by hand. */}
+          <CompareTable tours={tours} />
         </div>
         <p className="pr-tours-note">
           <Info size={15} className="pr-ico" /> Not sure which to pick?{" "}

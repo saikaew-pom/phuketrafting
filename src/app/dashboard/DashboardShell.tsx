@@ -15,6 +15,7 @@ import {
   MapPin,
   Inbox,
   Settings,
+  LogOut,
   Menu,
   X,
 } from "lucide-react";
@@ -50,6 +51,36 @@ function isActive(pathname: string, item: (typeof NAV)[number]): boolean {
   // "Overview" must not light up for every /dashboard/* route -- exact only.
   if (item.exact) return pathname === item.href;
   return pathname === item.href || pathname.startsWith(item.href + "/");
+}
+
+/**
+ * Signs the staff member out of Cloudflare Access.
+ *
+ * A plain link to Cloudflare's own endpoint, NOT an app route: Access owns
+ * the session (there is no app-side cookie or token to clear -- see
+ * lib/access.ts, the app only ever *verifies* the JWT Cloudflare attaches).
+ * Anything we implemented ourselves would look like it logged you out while
+ * leaving the real Access session intact, so the next visit would silently
+ * walk straight back in -- worse than no button at all, especially on the
+ * shared laptop at the riverside office this exists for.
+ *
+ * /cdn-cgi/access/logout is served by Cloudflare's edge on this hostname, so
+ * it works on any domain the Access app covers, with no config.
+ */
+function SignOut() {
+  // The <a> is deliberate and the lint rule is wrong here: /cdn-cgi/* is
+  // served by Cloudflare's edge and never reaches the Worker's router, so
+  // next/link would client-side navigate to a route that doesn't exist and
+  // the Access session would survive -- a sign-out button that doesn't sign
+  // you out. A full browser navigation IS the mechanism.
+  return (
+    <>
+      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+      <a href="/cdn-cgi/access/logout" className="pr-dash-signout">
+        <LogOut size={15} className="pr-ico" /> Sign out
+      </a>
+    </>
+  );
 }
 
 export function DashboardShell({
@@ -91,6 +122,7 @@ export function DashboardShell({
           <strong>{staff.name}</strong>
           <span>{staff.email}</span>
           <span className="pr-dash-badge pr-dash-badge-neutral">{staff.role}</span>
+          <SignOut />
         </div>
       </aside>
 
@@ -108,6 +140,7 @@ export function DashboardShell({
           <div className="pr-dash-user">
             <strong>{staff.name}</strong>
             <span>{staff.email}</span>
+            <SignOut />
           </div>
         </div>
       )}

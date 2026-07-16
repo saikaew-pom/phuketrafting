@@ -6,6 +6,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { createTourBooking } from "@/lib/booking";
 import { openCheckoutForBooking } from "@/lib/checkout";
+import { sendBookingAck } from "@/lib/booking-ack";
 import { calculateTourPrice, type PriceBreakdown } from "@/lib/pricing";
 import { listAvailableTourSessions, type AvailableTourSession } from "@/lib/scheduling";
 import { isSupportedLocale, DEFAULT_LOCALE } from "@/lib/i18n";
@@ -201,6 +202,12 @@ export async function submitTourBooking(_prevState: BookingFormState, formData: 
       };
       return { status: "error", message: messages[result.reason ?? ""] ?? "Something went wrong -- please try WhatsApp instead." };
     }
+
+    // Awaited, not fire-and-forget: a Worker can be torn down the moment the
+    // response is returned, and an un-awaited promise would simply never run
+    // -- the guest would silently get no email. sendBookingAck never throws,
+    // so this can't turn a successful booking into an error.
+    await sendBookingAck(result.bookingId!, requestHeaders.get("host"));
 
     return {
       status: "success",

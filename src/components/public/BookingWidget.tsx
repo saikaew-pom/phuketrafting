@@ -60,6 +60,7 @@ export function BookingWidget({
   const [tourId, setTourId] = useState(tours[0]?.id ?? "");
   const [sessions, setSessions] = useState<AvailableTourSession[]>([]);
   const [sessionId, setSessionId] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(0);
   const [infants, setInfants] = useState(0);
@@ -217,8 +218,33 @@ export function BookingWidget({
 
   const selectedSession = sessions.find((s) => s.id === sessionId) ?? null;
 
+  // Each tour card's "Book" button links to #book-<tourId>. Those buttons used
+  // to open WhatsApp instead -- clicking "Book" on a package never reached the
+  // booking form at all, which is the single most expensive dead end on the
+  // page. A hash (rather than ?tour=, which would force a full server
+  // re-render of a force-dynamic page) keeps it instant and lets the cards
+  // stay server components.
+  useEffect(() => {
+    const applyHash = () => {
+      const match = /^#book-(.+)$/.exec(window.location.hash);
+      if (!match) return;
+      // The hash is user-editable, so it's a claim: only accept an id that is
+      // really one of the tours we render.
+      const wanted = tours.find((t) => t.id === decodeURIComponent(match[1]));
+      if (!wanted) return;
+      setTourId(wanted.id);
+      setSessionId("");
+      rootRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    };
+    applyHash();
+    // hashchange fires when the guest clicks a second Book button while the
+    // widget is already showing -- without it, only the first click would land.
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, [tours]);
+
   return (
-    <div className="pr-bform pr-bform-card">
+    <div className="pr-bform pr-bform-card" ref={rootRef}>
       {TURNSTILE_SITE_KEY && (
         <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" strategy="afterInteractive" async defer />
       )}
@@ -305,9 +331,17 @@ export function BookingWidget({
                 <option value="" disabled>
                   {sessions.length === 0 ? "No open dates in the next 90 days" : "Choose a date"}
                 </option>
+                {/* Date and time only -- deliberately NOT a seat count.
+                    listAvailableTourSessions already excludes anything with no
+                    seat left, so every option here is bookable and the number
+                    added nothing but noise (and a nudge to haggle). It was also
+                    wrong: it computed capacity - booked_count, ignoring
+                    allotment_hold, so a departure with seats held for agents
+                    advertised MORE seats than it could actually sell. Staff
+                    still see real counts on /dashboard/availability. */}
                 {sessions.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.date} -- {s.start_time} ({s.capacity - s.booked_count} seats left)
+                    {s.date} -- {s.start_time}
                   </option>
                 ))}
               </select>

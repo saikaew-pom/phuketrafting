@@ -50,7 +50,10 @@ export function Nav() {
           >
             <MessageCircle size={17} className="pr-ico" /> <span>WhatsApp</span>
           </a>
-          <a className="pr-btn pr-btn-accent" href="#book">
+          {/* #top = the hero's booking form. It pointed at #book, which is the
+              closing CTA section, not the form -- so "Book now" scrolled past
+              the booking widget to a different button. */}
+          <a className="pr-btn pr-btn-accent" href="#top">
             Book now
           </a>
           <button className="pr-nav-burger" onClick={() => setOpen(!open)} aria-label="Menu">

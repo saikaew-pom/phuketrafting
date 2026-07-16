@@ -85,7 +85,7 @@ export async function sendEnquiryNotification(enquiry: EnquiryNotification, conf
   }
 }
 
-interface BookingReceivedEmail {
+export interface BookingReceivedEmail {
   guestName: string;
   guestEmail: string;
   productName: string;
