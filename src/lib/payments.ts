@@ -235,3 +235,82 @@ export async function createCheckoutSession(
   }
   return { id: session.id, url: session.url };
 }
+
+export interface RefundInput {
+  /** The Checkout Session whose payment is being refunded. */
+  sessionId: string;
+  /**
+   * Whole baht to refund, or null for the full amount captured.
+   *
+   * Not defaulted to the booking's deposit_amount: the authority on what was
+   * actually charged is Stripe, not our row (they can differ -- see the
+   * webhook's MISMATCH logging), and refunding more than was captured is an
+   * API error rather than a silent overpayment.
+   */
+  amountBaht: number | null;
+  /** Free text from the staff member; stored on the Stripe refund's metadata. */
+  reason: string;
+  /** Who pressed the button -- for the Stripe-side audit trail. */
+  actorEmail: string;
+}
+
+export interface RefundResult {
+  id: string;
+  amountSatang: number;
+  status: string | null;
+}
+
+/**
+ * Refunds a booking's deposit (plan §4: "Refunds from the dashboard (admin
+ * role) via Stripe API with reason logged to booking_logs").
+ *
+ * Resolves the PaymentIntent from the Checkout Session rather than taking one
+ * directly: the session id is what we store on the booking
+ * (stripe_checkout_session_id), and it's the only Stripe handle the dashboard
+ * has. The PaymentIntent is created lazily by Stripe when the guest actually
+ * pays, so a session that was never paid has none -- which this reports as a
+ * clear error rather than a confusing null dereference.
+ *
+ * Throws on any failure. Unlike the checkout path, this must NOT fail open:
+ * the caller is a human who pressed "refund" and needs to know whether the
+ * money actually moved. Silently swallowing a failure here would leave staff
+ * believing a guest was refunded when they weren't.
+ *
+ * Idempotency-keyed on the session, so a double-click or a retried action
+ * cannot refund twice -- but be precise about how far that goes: Stripe
+ * idempotency keys EXPIRE AFTER 24 HOURS. The key only collapses duplicates
+ * within that day. What actually prevents a second refund a week later is
+ * Stripe rejecting a full refund on an already-fully-refunded charge, not
+ * anything here. Same 24h caveat applies to the full-then-partial collision
+ * below.
+ *
+ * Within those 24h, a FULL refund and a subsequent PARTIAL refund of the same
+ * session collide (Stripe returns the first refund for both) -- acceptable
+ * because the dashboard exposes exactly one refund per booking; revisit if
+ * partial refunds ever become a real workflow.
+ */
+export async function createRefund(input: RefundInput, config: StripeConfig): Promise<RefundResult> {
+  const stripe = getStripe(config);
+  if (!stripe) throw new Error("Stripe is not configured (STRIPE_SECRET_KEY missing)");
+
+  const session = await stripe.checkout.sessions.retrieve(input.sessionId);
+  const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
+  if (!paymentIntentId) {
+    throw new Error(`Checkout session ${input.sessionId} has no payment to refund (it was never paid)`);
+  }
+
+  const refund = await stripe.refunds.create(
+    {
+      payment_intent: paymentIntentId,
+      ...(input.amountBaht !== null ? { amount: bahtToSatang(input.amountBaht) } : {}),
+      // Stripe's own `reason` is a closed enum (duplicate/fraudulent/
+      // requested_by_customer) that can't express "heavy rain, we cancelled" --
+      // the real reason goes in metadata, which is free text and shows on the
+      // refund in Stripe's dashboard next to the money.
+      metadata: { reason: input.reason, refunded_by: input.actorEmail },
+    },
+    { idempotencyKey: `refund:${input.sessionId}` }
+  );
+
+  return { id: refund.id, amountSatang: refund.amount, status: refund.status };
+}

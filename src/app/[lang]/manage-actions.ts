@@ -6,6 +6,7 @@ import { z } from "zod";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { isSupportedLocale, DEFAULT_LOCALE } from "@/lib/i18n";
+import { getPaymentPolicy, isWithinCancellationWindow } from "@/lib/queries/settings";
 import { getBookingByManageToken } from "@/lib/queries/bookings";
 import { replaceParticipants, type ParticipantInput } from "@/lib/queries/participants";
 import { logBookingEvent } from "@/lib/booking";
@@ -79,8 +80,18 @@ export async function requestBookingChange(
     }
 
     const data = parsed.data;
+    // Snapshot the policy position AT REQUEST TIME onto the log. Staff act on
+    // these hours or days later, by which point recomputing "were they inside
+    // the free window?" gives a different answer than when the guest actually
+    // asked -- and the guest's entitlement is fixed by when they asked, not by
+    // when someone got round to it. null means we couldn't tell; staff decide.
+    const policy = await getPaymentPolicy();
+    const withinWindow = isWithinCancellationWindow(booking.date, policy.cancellationWindowHours);
     await logBookingEvent(booking.id, "guest", `guest_${data.requestType}_requested`, {
       message: data.message || null,
+      within_free_window: withinWindow,
+      window_hours: policy.cancellationWindowHours,
+      deposit_amount: booking.deposit_amount,
     });
 
     // Fail-open -- the booking_logs row above is the durable record; a Brevo

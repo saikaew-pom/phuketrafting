@@ -39,12 +39,29 @@ export interface PaymentPolicy {
    * awaiting_payment, so it would no-op and they'd have paid for nothing.
    */
   holdMinutes: number;
+  /**
+   * Hours before departure up to which a guest may cancel/reschedule free and
+   * get the deposit back (plan §4's proposed 72h).
+   *
+   * NOT client-confirmed. Plan §14's "Still open" list item 2 is explicit:
+   * "Cancellation window -- sign off the proposed 72-hour free-cancellation
+   * rule in §4 (deposit refund mechanics depend on it)." It lives in settings
+   * precisely so signing off a different number is a data change, not a
+   * deploy. Everything that reads it must treat it as a real business rule
+   * that may move.
+   */
+  cancellationWindowHours: number;
 }
 
 // Plan §4 calls the 25% split "confirmed by client", so it's the default
 // rather than a guess. `deposit` mode likewise. 30 minutes is the user's
 // chosen hold window and also Stripe's own minimum for expires_at.
-export const DEFAULT_PAYMENT_POLICY: PaymentPolicy = { mode: "deposit", depositRate: 0.25, holdMinutes: 30 };
+export const DEFAULT_PAYMENT_POLICY: PaymentPolicy = {
+  mode: "deposit",
+  depositRate: 0.25,
+  holdMinutes: 30,
+  cancellationWindowHours: 72,
+};
 
 // Stripe rejects an expires_at outside this range, so the setting is clamped
 // to what Stripe will actually accept -- a hand-edited 5 would otherwise fail
@@ -126,5 +143,56 @@ export async function getPaymentPolicy(dbOverride?: D1Database): Promise<Payment
       ? Math.min(Math.max(Math.round(hold), MIN_HOLD_MINUTES), MAX_HOLD_MINUTES)
       : DEFAULT_PAYMENT_POLICY.holdMinutes;
 
-  return { mode, depositRate, holdMinutes };
+  // Bounded to something a human could mean: 0 (no free window at all) up to
+  // 30 days. Unlike holdMinutes there's no external API constraining this --
+  // the bound exists so a typo'd 720000 can't silently make every booking
+  // refundable forever.
+  const window = value.cancellationWindowHours;
+  const cancellationWindowHours =
+    typeof window === "number" && Number.isFinite(window) && window >= 0 && window <= 24 * 30
+      ? Math.round(window)
+      : DEFAULT_PAYMENT_POLICY.cancellationWindowHours;
+
+  return { mode, depositRate, holdMinutes, cancellationWindowHours };
+}
+
+/**
+ * Whether a booking departing at `departureDate` (YYYY-MM-DD) is still inside
+ * the free-cancellation window.
+ *
+ * Departure is treated as the START of that day in Thailand -- tours leave in
+ * the morning, and the guest-facing promise is "72 hours before departure",
+ * not "before the end of departure day". Erring the other way would quietly
+ * hand out refunds up to a day later than the policy states.
+ *
+ * Returns null when there's no date to measure against (a camp booking with no
+ * check_in, a malformed date). Callers must NOT treat null as "inside" -- it
+ * means "we can't say", and a human decides.
+ */
+export function isWithinCancellationWindow(
+  departureDate: string | null,
+  windowHours: number,
+  now: Date = new Date()
+): boolean | null {
+  if (!departureDate || !/^\d{4}-\d{2}-\d{2}$/.test(departureDate)) return null;
+  const parsed = new Date(`${departureDate}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  // The regex and the NaN check together are NOT enough. JS only range-checks
+  // an ISO date's month (<=12) and day (<=31): "2026-07-32" is correctly
+  // Invalid Date, but "2026-02-30" is NOT -- it silently rolls over to
+  // 2026-03-02, and "2026-02-29" (non-leap) to 2026-03-01. Left unchecked,
+  // a booking carrying a day-of-month that doesn't exist would have its free
+  // window measured against a departure up to three days later than the date
+  // on the row -- i.e. a confident `true` promising a refund we never owed --
+  // where this function's contract says "we can't tell" (null). Round-trip
+  // the parse so only a real calendar date survives. Reachable: `date` is
+  // COALESCE(tour_sessions.date, bookings.check_in), and check_in has no
+  // format constraint in the schema or in camp-booking-actions' Zod schema
+  // (both only require a non-empty string).
+  if (parsed.toISOString().slice(0, 10) !== departureDate) return null;
+  // Thailand is UTC+7 year-round (no DST), so 00:00 ICT is 17:00 UTC the day
+  // before -- same fixed-offset reasoning as the notification cron's
+  // thailandDateOffset.
+  const departureUtcMs = parsed.getTime() - 7 * 60 * 60 * 1000;
+  return departureUtcMs - now.getTime() >= windowHours * 60 * 60 * 1000;
 }

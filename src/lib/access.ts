@@ -145,3 +145,36 @@ export async function requireStaff(): Promise<StaffIdentity> {
   }
   return { email: staff.email, name: staff.name, role: staff.role };
 }
+
+/**
+ * requireStaff, plus a check that the caller is an `admin`.
+ *
+ * The FIRST role enforcement in this app. Every /dashboard action to date has
+ * only required "an active staff member" -- `staff.role` has been stored and
+ * returned since Phase 1 but never actually gated anything. Plan §1a is
+ * explicit that this table is the point: "Cloudflare Access confirms *who*
+ * (email); this table is the only source of truth for *what they can do*
+ * (role) -- Access has no role/group concept under OTP email login." So the
+ * gate can only live here, in our own code; there is no upstream to defer to.
+ *
+ * Plan §4 puts refunds behind it ("Refunds from the dashboard (admin role)"),
+ * and plan §11's security summary likewise ("admin-role gate for keys/refunds
+ * enforced in the D1 role table"). A refund moves real money out of the
+ * business's account and cannot be undone from here -- that is a different
+ * class of action from editing a note, and the guide who checks guests in
+ * each morning has no reason to hold it.
+ *
+ * Throws (fails closed) exactly like requireStaff, so callers need no extra
+ * handling: a non-admin gets the same rejection as a stranger.
+ */
+export async function requireAdmin(): Promise<StaffIdentity> {
+  const staff = await requireStaff();
+  if (staff.role !== "admin") {
+    // Logged: an authenticated staff member hitting an admin-only action is
+    // worth seeing, unlike an anonymous 401. It's either a UI bug (a button
+    // shown to someone who can't use it) or someone poking at an action id.
+    console.warn(`requireAdmin: ${staff.email} (role=${staff.role}) was refused an admin-only action`);
+    throw new Error("Unauthorized: admin role required");
+  }
+  return staff;
+}

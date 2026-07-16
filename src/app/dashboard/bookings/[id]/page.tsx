@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { getBookingDetail, listBookingLogs } from "@/lib/queries/bookings";
 import { listParticipants } from "@/lib/queries/participants";
-import { changeBookingStatus, toggleCheckedIn, saveBookingNotes, notifyGuestEmail, markWhatsAppSent } from "../actions";
+import { changeBookingStatus, toggleCheckedIn, saveBookingNotes, notifyGuestEmail, markWhatsAppSent, refundBooking } from "../actions";
+import { requireStaff } from "@/lib/access";
 import { baht, formatDateTime } from "@/lib/format";
 import { guestWaLink } from "@/lib/whatsapp";
 
@@ -13,12 +14,17 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   if (!booking) notFound();
 
   const logs = await listBookingLogs(id);
+  // Drives whether the refund form renders at all. The action re-checks the
+  // role itself (requireAdmin) -- this only avoids showing a button that would
+  // reject. Never the security boundary.
+  const staff = await requireStaff();
   const participants = await listParticipants(id);
   const changeStatusWithId = changeBookingStatus.bind(null, id);
   const toggleCheckedInWithId = toggleCheckedIn.bind(null, id);
   const saveNotesWithId = saveBookingNotes.bind(null, id);
   const notifyEmailWithId = notifyGuestEmail.bind(null, id);
   const markWhatsAppSentWithId = markWhatsAppSent.bind(null, id);
+  const refundWithId = refundBooking.bind(null, id);
   const whatsAppMessage = `Hi ${booking.guest_name}, this is Phuket Rafting confirming we've received your booking for ${
     booking.product_name ?? "your trip"
   } on ${booking.date ?? ""}. We'll follow up with pickup details soon!`;
@@ -132,6 +138,36 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           Save notes
         </button>
       </form>
+
+      <h2>Payment</h2>
+      <p>
+        Deposit: {baht(booking.deposit_amount)} &middot; Balance on the day: {baht(booking.balance_amount)}
+        <br />
+        Payment status: {booking.payment_status}
+        {booking.stripe_checkout_session_id && (
+          <>
+            <br />
+            <span style={{ fontFamily: "monospace", fontSize: "12px" }}>{booking.stripe_checkout_session_id}</span>
+          </>
+        )}
+      </p>
+      {/* Admin-only, and only for a booking that actually has money to give
+          back. The action re-checks the role regardless (Server Actions are
+          independently POST-reachable) -- hiding it is a courtesy, not a gate. */}
+      {staff.role === "admin" && booking.payment_status === "paid" && booking.stripe_checkout_session_id && (
+        <form action={refundWithId} style={{ display: "grid", gap: "8px", maxWidth: "480px" }}>
+          <label>
+            Refund reason (goes on the Stripe record and the audit log)
+            <input name="refund_reason" required maxLength={500} style={{ display: "block", width: "100%" }} />
+          </label>
+          <button type="submit" style={{ width: "fit-content" }}>
+            Refund {baht(booking.deposit_amount)} deposit
+          </button>
+        </form>
+      )}
+      {staff.role !== "admin" && booking.payment_status === "paid" && (
+        <p style={{ color: "#666" }}>Refunds require an admin account.</p>
+      )}
 
       <h2>Notifications</h2>
       <p>

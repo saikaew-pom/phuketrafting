@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getBookingByManageToken } from "@/lib/queries/bookings";
 import { listParticipants } from "@/lib/queries/participants";
+import { getPaymentPolicy, isWithinCancellationWindow } from "@/lib/queries/settings";
 import { baht } from "@/lib/format";
 import { waLink } from "@/lib/whatsapp";
 import { ManageBookingRequestForm } from "@/components/public/ManageBookingRequestForm";
@@ -33,6 +34,11 @@ export default async function ManageBookingPage({ params }: { params: Promise<{ 
   if (!booking) notFound();
 
   const participants = await listParticipants(booking.id);
+  const policy = await getPaymentPolicy();
+  // null = we can't tell (no date on file / unparseable). Deliberately NOT
+  // treated as "inside": telling a guest their deposit is refundable when we
+  // don't actually know is a promise we might not keep.
+  const withinWindow = isWithinCancellationWindow(booking.date, policy.cancellationWindowHours);
 
   const guestCount = [
     booking.adults ? `${booking.adults} adult${booking.adults === 1 ? "" : "s"}` : null,
@@ -136,16 +142,26 @@ export default async function ManageBookingPage({ params }: { params: Promise<{ 
         )}
 
         <h2>Cancellation &amp; reschedule policy</h2>
-        {/* 72h window is a proposed value pending client sign-off (plan §14,
-            "Cancellation window" open item) -- not yet wired to the settings
-            table (unused anywhere in this codebase today; building a
-            settings get/set layer is out of scope for this chunk). Update
-            this text if/when the real number is confirmed. */}
+        {/* The window is read from settings, not hardcoded: plan §14 still
+            lists the 72h rule as awaiting client sign-off, so a different
+            number must be a data change rather than a deploy. */}
         <p>
-          Free cancellation or reschedule up to 72 hours before departure (full deposit refund). Inside 72 hours,
-          the deposit is forfeited. If we ever need to cancel for weather or safety reasons, you&apos;ll always get a
-          full refund or a free reschedule.
+          Free cancellation or reschedule up to {policy.cancellationWindowHours} hours before departure (full deposit
+          refund). Inside {policy.cancellationWindowHours} hours, the deposit is forfeited. If we ever need to cancel
+          for weather or safety reasons, you&apos;ll always get a full refund or a free reschedule.
         </p>
+        {/* Tells the guest where THEY actually stand, rather than making them
+            work it out from the policy and their departure date. Only shown
+            when there's a deposit at stake and we can genuinely tell. */}
+        {withinWindow !== null && booking.deposit_amount > 0 && canRequestChange && (
+          <p>
+            <strong>
+              {withinWindow
+                ? `You're still inside the free window -- cancel now and your ${baht(booking.deposit_amount)} deposit is refunded in full.`
+                : `You're now inside ${policy.cancellationWindowHours} hours of departure, so your ${baht(booking.deposit_amount)} deposit is non-refundable. You can still request a change and we'll do what we can.`}
+            </strong>
+          </p>
+        )}
 
         {canRequestChange ? (
           <>

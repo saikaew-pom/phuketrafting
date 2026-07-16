@@ -3,7 +3,9 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireStaff } from "@/lib/access";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { requireStaff, requireAdmin } from "@/lib/access";
+import { createRefund } from "@/lib/payments";
 import {
   updateBookingStatus,
   updateCheckedIn,
@@ -171,6 +173,7 @@ function parseGuestCount(formData: FormData, key: string): number {
 // bypassable the same way the numeric maxes above are (confirmed live: a raw POST
 // with a 5,000-char hotel field was accepted with zero rejection before this).
 const FIELD_MAX_LENGTHS: Record<string, number> = {
+  refund_reason: 500,
   guest_name: 120,
   guest_phone: 40,
   hotel: 200,
@@ -259,4 +262,66 @@ export async function createStaffBooking(formData: FormData) {
   // what you made" flow as every other admin create screen would use, and
   // lets them immediately send the confirmation email/WhatsApp if wanted.
   redirect(`/dashboard/bookings/${result.bookingId}`);
+}
+
+
+/**
+ * Refunds a booking's deposit (plan §4: "Refunds from the dashboard (admin
+ * role) via Stripe API with reason logged to booking_logs").
+ *
+ * requireAdmin, not requireStaff -- the first admin-gated action in the app.
+ * This moves real money out of the business account and can't be undone from
+ * here; the guide checking guests in each morning has no reason to hold it.
+ * The gate is re-checked HERE rather than trusted from the page that rendered
+ * the button, for the same reason every other action re-checks: Server Actions
+ * are independently POST-reachable (see requireStaff's doc comment).
+ *
+ * Deliberately does NOT mark the booking refunded itself -- the
+ * charge.refunded webhook does that (5c). One writer for that column means
+ * a refund issued from the Stripe dashboard by hand lands identically to one
+ * issued here, instead of only the latter being recorded.
+ *
+ * Nor does it cancel the booking. Refunding is a money decision; whether the
+ * guest still has a seat is a separate one staff make with the status
+ * dropdown. Coupling them would make "refund a partial goodwill amount" also
+ * silently cancel a trip the guest is still coming on.
+ */
+export async function refundBooking(bookingId: string, formData: FormData) {
+  const admin = await requireAdmin();
+
+  const reason = parseBoundedText(formData, "refund_reason");
+  if (!reason) throw new Error("A refund reason is required -- it goes on the Stripe record and the audit log.");
+
+  const booking = await getBookingDetail(bookingId);
+  if (!booking) throw new Error(`Booking not found: ${bookingId}`);
+  if (!booking.stripe_checkout_session_id) {
+    throw new Error("This booking has no Stripe payment to refund.");
+  }
+  if (booking.payment_status !== "paid") {
+    throw new Error(`Only a paid booking can be refunded (this one is "${booking.payment_status}").`);
+  }
+
+  const { env } = getCloudflareContext();
+  // Amount omitted => Stripe refunds the full captured amount. Deliberately
+  // not booking.deposit_amount: Stripe is the authority on what was actually
+  // charged (the two can differ -- see the webhook's MISMATCH logging), and
+  // asking for more than was captured is an API error rather than a silent
+  // overpayment.
+  const refund = await createRefund(
+    { sessionId: booking.stripe_checkout_session_id, amountBaht: null, reason, actorEmail: admin.email },
+    env
+  );
+
+  // Logged with the real admin identity: plan §4 wants the reason on
+  // booking_logs, and "who authorised this refund" is the whole point of
+  // gating it.
+  await logBookingEvent(bookingId, admin.email, "refund_issued", {
+    reason,
+    refund_id: refund.id,
+    amount_satang: refund.amountSatang,
+    status: refund.status,
+  });
+
+  revalidatePath(`/dashboard/bookings/${bookingId}`);
+  revalidatePath("/dashboard/bookings");
 }
