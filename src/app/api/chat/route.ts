@@ -9,6 +9,8 @@ import {
   listRecentMessages,
   countGuestMessages,
 } from "@/lib/queries/conversations";
+import { getChatPolicy } from "@/lib/queries/settings";
+import { getChatSpend, addChatTokens } from "@/lib/queries/chat-spend";
 import { WHATSAPP_NUMBER } from "@/lib/whatsapp";
 
 /**
@@ -27,9 +29,13 @@ export const dynamic = "force-dynamic";
  * Cost/abuse limits (plan §9's "Chatbot cost & abuse control"). Every one of
  * these is a spend ceiling first and a UX rule second.
  */
-// Per IP. Tighter than the enquiry form's 3/60s is unnecessary, but a chat is
-// inherently many requests, so this is per-message rather than per-session.
-const RATE_LIMIT_PER_MIN = 12;
+// Per IP -- the bucket an abuser cannot reset, so it carries the real ceiling.
+// Raised above the per-session limit because a shared hotel wifi legitimately
+// carries several guests at once.
+const RATE_LIMIT_PER_IP_PER_MIN = 30;
+// Per session -- generous for one human (a person types maybe 3-4 messages a
+// minute), so it never throttles a real guest behind a shared IP.
+const RATE_LIMIT_PER_SESSION_PER_MIN = 8;
 // A real guest asking about tours does not need 40 turns. Past this the thread
 // is either a bot or someone who needs a human anyway.
 const MAX_GUEST_MESSAGES_PER_SESSION = 30;
@@ -104,8 +110,19 @@ export async function POST(request: Request): Promise<Response> {
   // same reasoning as enquiry-actions.ts. The rate-limit bucket is a real
   // spend boundary, so it never trusts a forgeable header.
   const cfIp = request.headers.get("cf-connecting-ip");
-  const allowed = await checkRateLimit(`chat:${cfIp ?? "no-cf-ip"}`, RATE_LIMIT_PER_MIN, 60);
-  if (!allowed) {
+  // TWO buckets, deliberately. Neither alone is sufficient:
+  //   - per-IP is the only bucket an abuser can't reset (they can rotate
+  //     sessionId freely), but it collectively punishes a shared hotel/cafe
+  //     wifi -- very plausible here, since guests book from a hotel lobby.
+  //   - per-session is generous per person, so one guest on that shared wifi
+  //     isn't throttled by strangers, but it is trivially bypassed alone.
+  // Together: a normal guest is bounded by the loose per-session limit, while
+  // the per-IP ceiling still caps what any single origin can spend.
+  const [ipOk, sessionOk] = await Promise.all([
+    checkRateLimit(`chat-ip:${cfIp ?? "no-cf-ip"}`, RATE_LIMIT_PER_IP_PER_MIN, 60),
+    checkRateLimit(`chat-session:${sessionId}`, RATE_LIMIT_PER_SESSION_PER_MIN, 60),
+  ]);
+  if (!ipOk || !sessionOk) {
     return Response.json({ error: "You're sending messages very quickly -- please wait a moment." }, { status: 429 });
   }
 
@@ -115,6 +132,23 @@ export async function POST(request: Request): Promise<Response> {
     // is why nothing sensitive is ever stored here and why the bot is
     // stateless about identity. Booking mode (6d) must NOT relax this -- its
     // draft token, not this id, is what will carry authority.
+    // Both read BEFORE any model call: the whole point is to not spend.
+    const [policy, spend] = await Promise.all([getChatPolicy(), getChatSpend()]);
+
+    if (!policy.enabled) {
+      return Response.json({ reply: FALLBACK, degraded: true });
+    }
+
+    // Plan §9: "when hit, the bot degrades gracefully to 'please WhatsApp us'
+    // instead of erroring". Checked before the call, not after -- a cap that
+    // only notices once the tokens are spent isn't a cap. It can overshoot by
+    // at most the in-flight turns at the boundary, which is the same
+    // acceptable trade as the promo-code cap in booking.ts.
+    if (spend.tokens >= policy.dailyTokenCap) {
+      console.warn(`chat: daily token cap reached (${spend.tokens}/${policy.dailyTokenCap}) -- degrading to WhatsApp`);
+      return Response.json({ reply: FALLBACK, degraded: true, capReached: true });
+    }
+
     const conversation = await findOrCreateConversation("web", sessionId);
 
     // A thread staff have taken over must not get bot replies talking over
@@ -164,8 +198,18 @@ export async function POST(request: Request): Promise<Response> {
     const text = finalizeReply(reply.text, reply.stopReason);
     await appendMessage(conversation.id, "bot", text);
 
-    // Per plan §9's "model/token usage logged per conversation" -- the
-    // dashboard's spend view (6b) reads this.
+    // Recorded AFTER the call, from the model's own reported usage rather than
+    // an estimate -- these are the tokens actually billed. Never throws into
+    // the guest's reply: losing one turn's accounting is far better than
+    // failing a reply the guest already paid for in latency. The cap self-heals
+    // on the next turn.
+    try {
+      await addChatTokens(reply.inputTokens + reply.outputTokens);
+    } catch (err) {
+      console.error("chat: failed to record token spend", err);
+    }
+
+    // Per plan §9's "model/token usage logged per conversation".
     console.log(
       `chat ${conversation.id}: in=${reply.inputTokens} out=${reply.outputTokens} stop=${reply.stopReason}`
     );

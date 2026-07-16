@@ -196,3 +196,54 @@ export function isWithinCancellationWindow(
   const departureUtcMs = parsed.getTime() - 7 * 60 * 60 * 1000;
   return departureUtcMs - now.getTime() >= windowHours * 60 * 60 * 1000;
 }
+
+/**
+ * Chatbot configuration (plan §9's two toggles + the cost controls).
+ *
+ * The toggles are separate on purpose: plan §9 says "Info mode first ... then
+ * booking mode behind its own settings toggle". Info mode only reads and
+ * talks; booking mode writes a draft a guest can turn into a real booking.
+ * Being able to kill the second without losing the first is the point -- if
+ * the bot ever mis-books, staff turn off booking and keep a useful assistant,
+ * rather than choosing between a liability and nothing.
+ */
+export interface ChatPolicy {
+  /** Master switch. Off = the widget never renders and /api/chat declines. */
+  enabled: boolean;
+  /** Off = info mode only (the launch default, per plan §9). */
+  bookingMode: boolean;
+  /**
+   * Hard ceiling on tokens spent per Bangkok day, across ALL guests.
+   *
+   * The only true spend ceiling that exists -- see queries/chat-spend.ts on
+   * why the per-session cap isn't one. 400k tokens/day is roughly a few
+   * hundred real conversations at this prompt size; generous for the traffic
+   * this business sees, and cheap insurance against a scripted abuser.
+   */
+  dailyTokenCap: number;
+}
+
+export const DEFAULT_CHAT_POLICY: ChatPolicy = { enabled: true, bookingMode: false, dailyTokenCap: 400_000 };
+
+const CHAT_POLICY_KEY = "chat_policy";
+
+export async function getChatPolicy(dbOverride?: D1Database): Promise<ChatPolicy> {
+  const raw = await readSetting(CHAT_POLICY_KEY, dbOverride);
+  if (!raw || typeof raw !== "object") return DEFAULT_CHAT_POLICY;
+  const value = raw as Record<string, unknown>;
+
+  // Each field independently validated, same stance as getPaymentPolicy: a row
+  // with one good field and one broken one keeps the good half.
+  return {
+    enabled: typeof value.enabled === "boolean" ? value.enabled : DEFAULT_CHAT_POLICY.enabled,
+    bookingMode: typeof value.bookingMode === "boolean" ? value.bookingMode : DEFAULT_CHAT_POLICY.bookingMode,
+    // Clamped at 0 rather than reverted: a staff member setting 0 means "stop
+    // spending", which is a legitimate intent and must be honoured exactly --
+    // reverting that to the 400k default would keep burning money against
+    // their explicit instruction.
+    dailyTokenCap:
+      typeof value.dailyTokenCap === "number" && Number.isFinite(value.dailyTokenCap) && value.dailyTokenCap >= 0
+        ? Math.round(value.dailyTokenCap)
+        : DEFAULT_CHAT_POLICY.dailyTokenCap,
+  };
+}
