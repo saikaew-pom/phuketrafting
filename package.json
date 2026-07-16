@@ -11,7 +11,10 @@
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy --env production",
     "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload --env production",
     "deploy:staging": "opennextjs-cloudflare build && opennextjs-cloudflare deploy --env staging",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "blog:generate": "node scripts/generate-blog-posts.mjs",
+    "blog:import": "node scripts/import-blog-posts.mjs",
+    "blog:verify": "node scripts/verify-blog-links.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
