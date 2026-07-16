@@ -4,7 +4,7 @@ import Link from "next/link";
 import { listPublishedPosts, listPublishedPostsByCategory, BLOG_CATEGORIES, categoryLabel, isBlogCategory } from "@/lib/queries/blog";
 import { formatDateTime } from "@/lib/format";
 import { BUSINESS_NAME, SITE_URL } from "@/lib/site";
-import { DEFAULT_LOCALE } from "@/lib/i18n";
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from "@/lib/i18n";
 
 // Same fix as privacy/terms/manage -- this page renders through
 // [lang]/layout.tsx's Footer (listTours() -> getCloudflareContext()), which
@@ -13,10 +13,13 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
+  const languages = Object.fromEntries(SUPPORTED_LOCALES.map((locale) => [locale, `${SITE_URL}/${locale}/blog`]));
+  languages["x-default"] = `${SITE_URL}/${DEFAULT_LOCALE}/blog`;
+
   return {
     title: `Blog -- ${BUSINESS_NAME}`,
     description: "Guides on rafting, jungle adventures, trip planning and riverside camping in Phang Nga, Thailand.",
-    alternates: { canonical: `${SITE_URL}/${lang}/blog` },
+    alternates: { canonical: `${SITE_URL}/${lang}/blog`, languages },
     robots: { index: true, follow: true },
   };
 }

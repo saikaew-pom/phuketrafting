@@ -74,11 +74,16 @@ export function buildProductsJsonLd(tours: TourCard[]) {
   }));
 }
 
-export function buildFaqJsonLd() {
+/**
+ * Defaults to the Landing page's hardcoded FAQS; blog posts pass their own
+ * (parsed out of the post body by lib/blog-faq.ts) rather than getting a
+ * second near-identical builder.
+ */
+export function buildFaqJsonLd(faqs: readonly { q: string; a: string }[] = FAQS) {
   return {
     "@context": "https://schema.org",
     "@type": "FAQPage",
-    mainEntity: FAQS.map((f) => ({
+    mainEntity: faqs.map((f) => ({
       "@type": "Question",
       name: f.q,
       acceptedAnswer: {
@@ -86,5 +91,45 @@ export function buildFaqJsonLd() {
         text: f.a,
       },
     })),
+  };
+}
+
+export interface ArticleJsonLdInput {
+  title: string;
+  slug: string;
+  excerpt: string | null;
+  coverImageId: string | null;
+  author: string | null;
+  publishedAt: number | null;
+  updatedAt: number;
+  lang: string;
+}
+
+/**
+ * Article markup for one blog post (plan §10: "Each post: JSON-LD").
+ *
+ * `publisher` is the same TouristAttraction entity buildOrganizationJsonLd
+ * describes on the Landing page -- referenced by @id rather than re-stated,
+ * so the two can't drift into describing the business differently.
+ */
+export function buildArticleJsonLd(post: ArticleJsonLdInput) {
+  const url = `${SITE_URL}/${post.lang}/blog/${post.slug}`;
+  return {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: post.title,
+    description: post.excerpt ?? undefined,
+    image: post.coverImageId ? cloudinaryUrl(post.coverImageId, 1200) : undefined,
+    // D1 stores unixepoch() SECONDS -- Date expects milliseconds (same trap
+    // lib/format.ts's formatDateTime documents).
+    datePublished: post.publishedAt ? new Date(post.publishedAt * 1000).toISOString() : undefined,
+    dateModified: new Date(post.updatedAt * 1000).toISOString(),
+    ...(post.author ? { author: { "@type": "Person", name: post.author } } : {}),
+    publisher: {
+      "@type": "Organization",
+      name: BUSINESS_NAME,
+      url: SITE_URL,
+    },
+    mainEntityOfPage: { "@type": "WebPage", "@id": url },
   };
 }

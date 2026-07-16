@@ -88,7 +88,24 @@ export function BlogBody({ markdown }: { markdown: string }) {
   // Blank-line-separated blocks, same as ChatMessage's line-by-line approach
   // but with heading levels preserved (a real <h2>, not a bolded paragraph --
   // blog posts need a real outline for readability and SEO, a chat bubble doesn't).
-  for (const raw of markdown.split(/\n{2,}/)) {
+  //
+  // Two normalizations have to happen before the split, because the heading
+  // regex below only matches a block that is a heading and nothing else:
+  //
+  // 1. CRLF -> LF. Staff paste from Word/Docs, and /\n{2,}/ does not match
+  //    "\r\n\r\n" -- the whole post collapsed into ONE block and rendered as a
+  //    single paragraph of literal "## ..." markdown.
+  // 2. Headings get their own blank lines. An ATX heading is its own block in
+  //    markdown even with no blank line after it, but "### Q\nAnswer" arrived
+  //    here as one block and rendered as a literal "### Q Answer" paragraph.
+  //
+  // Both mattered beyond looks: lib/blog-faq.ts parses this same markdown
+  // line-by-line for FAQPage JSON-LD, so either case emitted markup for
+  // questions the reader could not actually see as headings -- exactly the
+  // markup/content drift that keeping the FAQ in the body exists to prevent.
+  const normalized = markdown.replace(/\r\n?/g, "\n").replace(/^(#{2,4}\s+.*)$/gm, "\n$1\n");
+
+  for (const raw of normalized.split(/\n{2,}/)) {
     const block = raw.trim();
     if (!block) continue;
 

@@ -66,6 +66,11 @@ You are given the post's title, its category, and real facts about our tours and
 
 Write an 800-1200 word article body in MARKDOWN: use "## " and "### " for headings (never "# ", the title is shown separately), "**bold**" for emphasis, "- " for bullet lists, and blank lines between paragraphs. Plain prose otherwise -- no HTML tags, no code fences. Tone: warm, informative, editorial -- like a knowledgeable local writing for a curious traveler, not a sales brochure.
 
+Structure every post this way:
+1. The article itself, in "## " sections.
+2. Link at least once to whichever of these the post is actually about, in markdown link form: our tour packages ([our tour packages](/en#tours)) or our riverside camping ([riverside camping](/en#camp-book)). Only link the one the article is genuinely about -- a forced link to both helps nobody.
+3. End with a "## FAQ" section of 3-5 real questions a traveler would ask about THIS topic. Each question is a "### " heading phrased as the traveler would ask it, with a 1-3 sentence answer underneath. Answer only from the facts you were given; if a question can't be answered from them, ask a different question.
+
 ${GUARDRAILS}
 
 Return ONLY the markdown body, nothing else -- no title, no explanation before or after.`;

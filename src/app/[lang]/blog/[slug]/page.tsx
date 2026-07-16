@@ -5,8 +5,10 @@ import { notFound } from "next/navigation";
 import { getPublishedPost, listSiblingPosts, categoryLabel } from "@/lib/queries/blog";
 import { formatDateTime } from "@/lib/format";
 import { BUSINESS_NAME, SITE_URL } from "@/lib/site";
-import { DEFAULT_LOCALE } from "@/lib/i18n";
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from "@/lib/i18n";
 import { BlogBody } from "@/components/public/BlogBody";
+import { extractFaqs } from "@/lib/blog-faq";
+import { serializeJsonLd, buildArticleJsonLd, buildFaqJsonLd } from "@/lib/jsonld";
 import { waLink } from "@/lib/whatsapp";
 
 // Same fix as the rest of [lang]/* -- renders through the Footer, which needs
@@ -24,10 +26,19 @@ export async function generateMetadata({
   const post = await getPublishedPost(DEFAULT_LOCALE, slug);
   if (!post) return { title: `Blog -- ${BUSINESS_NAME}` };
 
+  // Reciprocal hreflang + x-default, same shape as the Landing page's
+  // generateMetadata. Every locale really does resolve this post (they all
+  // serve the EN copy for now -- see the list page's comment), so listing
+  // them is honest rather than aspirational.
+  const languages = Object.fromEntries(
+    SUPPORTED_LOCALES.map((locale) => [locale, `${SITE_URL}/${locale}/blog/${post.slug}`])
+  );
+  languages["x-default"] = `${SITE_URL}/${DEFAULT_LOCALE}/blog/${post.slug}`;
+
   return {
     title: `${post.title} -- ${BUSINESS_NAME}`,
     description: post.excerpt ?? undefined,
-    alternates: { canonical: `${SITE_URL}/${lang}/blog/${post.slug}` },
+    alternates: { canonical: `${SITE_URL}/${lang}/blog/${post.slug}`, languages },
     robots: { index: true, follow: true },
     openGraph: {
       title: post.title,
@@ -45,8 +56,29 @@ export default async function BlogPostPage({ params }: { params: Promise<{ lang:
 
   const siblings = await listSiblingPosts(DEFAULT_LOCALE, post.category, post.slug);
 
+  // Parsed out of the body the reader actually sees, never a separate copy --
+  // see lib/blog-faq.ts on why FAQPage markup must match visible content.
+  // A post with no "## FAQ" section simply gets no FAQ markup.
+  const faqs = extractFaqs(post.content);
+  const jsonLd: unknown[] = [
+    buildArticleJsonLd({
+      title: post.title,
+      slug: post.slug,
+      excerpt: post.excerpt,
+      coverImageId: post.cover_image_id,
+      author: post.author,
+      publishedAt: post.published_at,
+      updatedAt: post.updated_at,
+      lang,
+    }),
+  ];
+  if (faqs.length > 0) jsonLd.push(buildFaqJsonLd(faqs));
+
   return (
     <article className="pr-legal">
+      {jsonLd.map((entry, i) => (
+        <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(entry) }} />
+      ))}
       <div className="pr-wrap pr-wrap-narrow">
         <span className="pr-blog-card-category">{categoryLabel(post.category)}</span>
         <h1>{post.title}</h1>
