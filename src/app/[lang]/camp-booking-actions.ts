@@ -25,6 +25,7 @@ export async function previewCampPrice(input: {
   checkIn: string;
   checkOut: string;
   promoCode: string | null;
+  addonIds?: string[];
 }): Promise<PriceBreakdown | { error: string }> {
   try {
     const requestHeaders = await headers();
@@ -95,6 +96,9 @@ const CampBookingSchema = z.object({
   guestName: z.string().trim().min(2, "Please enter your name.").max(120),
   guestEmail: z.string().trim().email("Please enter a valid email address.").optional().or(z.literal("")),
   guestPhone: z.string().trim().max(40).optional().default(""),
+  // Priced add-ons the guest ticked -- ids only; price/name resolved from D1 in
+  // createCampBooking. Capped like the tour path. (Migration 0018.)
+  addonIds: z.array(z.string().trim().min(1)).max(50).optional().default([]),
   promoCode: z.string().trim().max(40).optional().default(""),
   locale: z.string(),
   consentMarketing: z.boolean(),
@@ -134,6 +138,7 @@ export async function submitCampBooking(
       guestName: formData.get("guest_name"),
       guestEmail: formData.get("guest_email") ?? "",
       guestPhone: formData.get("guest_phone") ?? "",
+      addonIds: formData.getAll("addon_ids").map(String),
       promoCode: formData.get("promo_code") ?? "",
       locale: formData.get("locale"),
       consentMarketing: formData.get("consent_marketing") === "on",
@@ -194,6 +199,7 @@ export async function submitCampBooking(
       guestName: data.guestName,
       guestEmail: data.guestEmail || null,
       guestPhone: data.guestPhone || null,
+      addonIds: data.addonIds,
       promoCode: data.promoCode || null,
       locale,
       source: "web",

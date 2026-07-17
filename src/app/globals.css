@@ -651,6 +651,66 @@ select.pr-input {
   color: var(--green);
 }
 
+/* ---- booking add-ons (priced extras, migration 0018) ---- */
+.pr-addon-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pr-addon {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.pr-addon-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.pr-addon input[type="checkbox"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.pr-addon-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+.pr-addon-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+.pr-addon-desc {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.pr-addon-price {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+/* Itemised extras above the total, so the guest sees what each tick added. */
+.pr-addon-summary {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pr-addon-summary li {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
 /* ---- trust bar ---- */
 .pr-trustbar {
   background: var(--ink);

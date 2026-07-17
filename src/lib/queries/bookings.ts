@@ -399,6 +399,8 @@ export interface DaySheetTourBooking {
   signed_waivers: number;
   notes: string | null;
   pickup_zone_name: string | null;
+  /** Comma-joined add-on names for this booking, or null if none (migration 0018). */
+  addons: string | null;
 }
 
 export interface DaySheetSession {
@@ -423,6 +425,8 @@ export interface DaySheetCampArrival {
   unit_name: string;
   zone_name: string;
   check_out: string;
+  /** Comma-joined add-on names for this booking, or null if none (migration 0018). */
+  addons: string | null;
 }
 
 export interface DaySheetCampDeparture {
@@ -471,7 +475,12 @@ export async function getDaySheet(date: string): Promise<DaySheet> {
         `SELECT b.id, b.tour_session_id, b.guest_name, b.guest_phone, b.adults, b.children, b.infants,
                 b.hotel, b.checked_in, b.waiver_acknowledged, b.notes, pz.name AS pickup_zone_name,
                 (SELECT COUNT(*) FROM booking_participants bp
-                  WHERE bp.booking_id = b.id AND bp.waiver_signed_at IS NOT NULL) AS signed_waivers
+                  WHERE bp.booking_id = b.id AND bp.waiver_signed_at IS NOT NULL) AS signed_waivers,
+                -- Extras staff need to prep for this guest (GoPro, etc.), as one
+                -- correlated subquery so the roster stays a fixed query count
+                -- regardless of size -- same anti-N+1 stance as signed_waivers.
+                (SELECT GROUP_CONCAT(ba.name_at_booking, ', ') FROM booking_addons ba
+                  WHERE ba.booking_id = b.id) AS addons
            FROM bookings b
            JOIN tour_sessions ts ON b.tour_session_id = ts.id
            LEFT JOIN pickup_zones pz ON b.pickup_zone_id = pz.id
@@ -483,7 +492,9 @@ export async function getDaySheet(date: string): Promise<DaySheet> {
     db
       .prepare(
         `SELECT b.id, b.guest_name, b.guest_phone, b.adults, b.children, b.infants, b.checked_in, b.notes,
-                cu.name AS unit_name, cz.name AS zone_name, b.check_out
+                cu.name AS unit_name, cz.name AS zone_name, b.check_out,
+                (SELECT GROUP_CONCAT(ba.name_at_booking, ', ') FROM booking_addons ba
+                  WHERE ba.booking_id = b.id) AS addons
            FROM bookings b
            JOIN camp_units cu ON b.camp_unit_id = cu.id
            JOIN camp_zones cz ON cu.zone_id = cz.id

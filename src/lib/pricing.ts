@@ -1,5 +1,6 @@
 import { getDb } from "@/lib/db";
 import { getPaymentPolicy, type PaymentPolicy } from "@/lib/queries/settings";
+import { getActiveAddonsByIds } from "@/lib/queries/addons";
 
 /**
  * The longest a single camp stay may be. Generous for a riverside camp (a
@@ -22,6 +23,10 @@ export interface PriceBreakdown {
   subtotal: number;
   discountAmount: number;
   transferFee: number;
+  /** Sum of the selected add-ons' prices (flat, once per booking). Added to total AFTER the discount, so a promo never discounts an add-on. */
+  addonsTotal: number;
+  /** The add-ons actually applied, resolved authoritatively from D1 (never the client's prices) -- for the widget preview and the booking_addons snapshot. */
+  addonsApplied: { id: string; name: string; price: number }[];
   total: number;
   promoApplied: { code: string; discountAmount: number } | null;
   /**
@@ -174,6 +179,23 @@ function applyDiscount(subtotal: number, promo: PromoLookupResult["promo"]): num
   return Math.min(raw, subtotal); // never discount below zero
 }
 
+/**
+ * Resolves selected add-on ids to their AUTHORITATIVE price/name from D1 and
+ * sums them. The trust boundary for add-on pricing: the client sends ids, the
+ * money comes from the catalog here -- a spoofed price or a retired add-on
+ * can't get through (getActiveAddonsByIds filters to is_active and de-dupes).
+ */
+async function resolveAddons(addonIds: string[] | undefined): Promise<{
+  addonsTotal: number;
+  addonsApplied: { id: string; name: string; price: number }[];
+}> {
+  if (!addonIds || addonIds.length === 0) return { addonsTotal: 0, addonsApplied: [] };
+  const rows = await getActiveAddonsByIds(addonIds);
+  const addonsApplied = rows.map((r) => ({ id: r.id, name: r.name, price: r.price }));
+  const addonsTotal = addonsApplied.reduce((sum, a) => sum + a.price, 0);
+  return { addonsTotal, addonsApplied };
+}
+
 export interface TourPriceInput {
   tourId: string;
   date: string; // 'YYYY-MM-DD', the tour departure date -- for seasonal (rate_periods) lookup only
@@ -183,6 +205,8 @@ export interface TourPriceInput {
   infants: number;
   pickupZoneId: string | null;
   promoCode: string | null;
+  /** Selected priced add-on ids (claim -- prices resolved from D1). */
+  addonIds?: string[];
 }
 
 export async function calculateTourPrice(input: TourPriceInput): Promise<PriceBreakdown> {
@@ -224,11 +248,16 @@ export async function calculateTourPrice(input: TourPriceInput): Promise<PriceBr
     }
   }
 
-  const total = subtotal - discountAmount + transferFee;
+  const { addonsTotal, addonsApplied } = await resolveAddons(input.addonIds);
+  // Add-ons added AFTER the discount, so a promo never discounts an add-on; they
+  // do flow into total, so the deposit is 25% of the add-on-inclusive amount.
+  const total = subtotal - discountAmount + transferFee + addonsTotal;
   return {
     subtotal,
     discountAmount,
     transferFee,
+    addonsTotal,
+    addonsApplied,
     total,
     promoApplied,
     ...splitPayment(total, await getPaymentPolicy()),
@@ -242,6 +271,8 @@ export interface CampPriceInput {
   checkOut: string; // 'YYYY-MM-DD', exclusive
   bookingDate: string; // 'YYYY-MM-DD', today -- for promo-code validity window only
   promoCode: string | null;
+  /** Selected priced add-on ids (claim -- prices resolved from D1). */
+  addonIds?: string[];
 }
 
 const WEEKEND_DAYS = new Set([0, 6]); // Sunday, Saturday
@@ -308,11 +339,14 @@ export async function calculateCampPrice(input: CampPriceInput): Promise<PriceBr
     }
   }
 
-  const total = subtotal - discountAmount;
+  const { addonsTotal, addonsApplied } = await resolveAddons(input.addonIds);
+  const total = subtotal - discountAmount + addonsTotal;
   return {
     subtotal,
     discountAmount,
     transferFee: 0,
+    addonsTotal,
+    addonsApplied,
     total,
     promoApplied,
     ...splitPayment(total, await getPaymentPolicy()),

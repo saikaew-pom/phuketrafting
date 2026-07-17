@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { ShieldCheck, ShowerHead, BadgeCheck, Zap, Play } from "lucide-react";
 import { Stars } from "@/components/public/Stars";
-import { BookingWidget, type BookingTourOption } from "@/components/public/BookingWidget";
+import { BookingWidget, type BookingTourOption, type BookingAddonOption } from "@/components/public/BookingWidget";
 import type { PickupZone } from "@/lib/queries/pickup";
 import type { SiteStats } from "@/lib/queries/settings";
 
@@ -10,11 +10,13 @@ const HERO_IMAGE_ID = "au7evtgufphh8vmfyaor";
 export function Hero({
   tours,
   pickupZones,
+  addons,
   locale,
   stats,
 }: {
   tours: BookingTourOption[];
   pickupZones: PickupZone[];
+  addons: BookingAddonOption[];
   /** Headline claims -- shared with TrustBar/Reviews/Footer so they can't disagree. */
   stats: SiteStats;
   locale: string;
@@ -59,7 +61,7 @@ export function Hero({
           </div>
         </div>
         <div className="pr-hero-widget">
-          <BookingWidget tours={tours} pickupZones={pickupZones} locale={locale} />
+          <BookingWidget tours={tours} pickupZones={pickupZones} addons={addons} locale={locale} />
         </div>
       </div>
     </section>

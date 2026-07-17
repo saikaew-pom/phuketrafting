@@ -110,7 +110,12 @@ export default async function DaySheetPage({
                         <td className={waiversIncomplete ? "pr-sheet-flag" : undefined}>
                           {b.signed_waivers} / {party}
                         </td>
-                        <td>{b.notes ?? ""}</td>
+                        <td>
+                          {b.notes ?? ""}
+                          {b.addons && (
+                            <div className="pr-sheet-flag">Extras: {b.addons}</div>
+                          )}
+                        </td>
                         <td className="no-print">
                           <form action={toggleCheckedIn.bind(null, b.id)} className="pr-dash-actions">
                             {/* key forces a remount when checked_in changes -- without it,
@@ -166,7 +171,10 @@ export default async function DaySheetPage({
                     <td>{b.unit_name}</td>
                     <td>{b.guest_phone ?? "--"}</td>
                     <td>{b.check_out}</td>
-                    <td>{b.notes ?? ""}</td>
+                    <td>
+                      {b.notes ?? ""}
+                      {b.addons && <div className="pr-sheet-flag">Extras: {b.addons}</div>}
+                    </td>
                     <td className="no-print">
                       <form action={toggleCheckedIn.bind(null, b.id)} className="pr-dash-actions">
                         {/* key forces a remount when checked_in changes -- see the matching

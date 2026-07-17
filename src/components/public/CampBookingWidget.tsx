@@ -14,6 +14,7 @@ import {
 import type { AvailableCampUnit } from "@/lib/scheduling";
 import type { CampRate } from "@/lib/queries/camping";
 import type { PriceBreakdown } from "@/lib/pricing";
+import type { BookingAddonOption } from "@/components/public/BookingWidget";
 
 declare global {
   interface Window {
@@ -46,7 +47,15 @@ function addDaysISO(base: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function CampBookingWidget({ zones, locale }: { zones: CampZoneOption[]; locale: string }) {
+export function CampBookingWidget({
+  zones,
+  addons,
+  locale,
+}: {
+  zones: CampZoneOption[];
+  addons: BookingAddonOption[];
+  locale: string;
+}) {
   const [zoneId, setZoneId] = useState(zones[0]?.id ?? "");
   const [rates, setRates] = useState<CampRate[]>([]);
   const [stayType, setStayType] = useState("");
@@ -57,6 +66,7 @@ export function CampBookingWidget({ zones, locale }: { zones: CampZoneOption[]; 
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(0);
   const [infants, setInfants] = useState(0);
+  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [promoCode, setPromoCode] = useState("");
   const [guestName, setGuestName] = useState("");
   const [guestEmail, setGuestEmail] = useState("");
@@ -131,7 +141,7 @@ export function CampBookingWidget({ zones, locale }: { zones: CampZoneOption[]; 
     }
     const requestId = ++previewRequestId.current;
     setPriceLoading(true);
-    previewCampPrice({ zoneId, stayType, checkIn, checkOut, promoCode: promoCode.trim() || null })
+    previewCampPrice({ zoneId, stayType, checkIn, checkOut, promoCode: promoCode.trim() || null, addonIds: selectedAddonIds })
       .then((result) => {
         if (requestId !== previewRequestId.current) return;
         setPriceLoading(false);
@@ -149,7 +159,7 @@ export function CampBookingWidget({ zones, locale }: { zones: CampZoneOption[]; 
         console.error("previewCampPrice failed", err);
         setPriceError("Unable to calculate price right now.");
       });
-  }, [zoneId, stayType, checkIn, checkOut, promoCode]);
+  }, [zoneId, stayType, checkIn, checkOut, promoCode, selectedAddonIds]);
 
   // Stripe Checkout is a hosted page on Stripe's own domain, so this is a
   // full document navigation, not a router push. Done in an effect rather
@@ -247,6 +257,11 @@ export function CampBookingWidget({ zones, locale }: { zones: CampZoneOption[]; 
           {/* Named "children_count", not "children" -- see BookingWidget.tsx's identical comment. */}
           <input type="hidden" name="children_count" value={children} />
           <input type="hidden" name="infants" value={infants} />
+          {/* One hidden input per ticked add-on -- camp-booking-actions.ts
+              reads them with formData.getAll("addon_ids"). */}
+          {selectedAddonIds.map((id) => (
+            <input key={id} type="hidden" name="addon_ids" value={id} />
+          ))}
           <input type="hidden" name="promo_code" value={promoCode} />
 
           <label className="pr-field">
@@ -380,6 +395,35 @@ export function CampBookingWidget({ zones, locale }: { zones: CampZoneOption[]; 
             </label>
           </div>
 
+          {addons.length > 0 && (
+            <div className="pr-field">
+              <span className="pr-field-lbl">Add extras (optional)</span>
+              <div className="pr-addon-list">
+                {addons.map((a) => {
+                  const checked = selectedAddonIds.includes(a.id);
+                  return (
+                    <label key={a.id} className={"pr-addon" + (checked ? " pr-addon-on" : "")}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) =>
+                          setSelectedAddonIds((ids) =>
+                            e.target.checked ? [...ids, a.id] : ids.filter((x) => x !== a.id)
+                          )
+                        }
+                      />
+                      <span className="pr-addon-body">
+                        <span className="pr-addon-name">{a.name}</span>
+                        {a.description && <span className="pr-addon-desc">{a.description}</span>}
+                      </span>
+                      <span className="pr-addon-price">+{baht(a.price)}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <label className="pr-field">
             <span className="pr-field-lbl">Promo code (optional)</span>
             <div className="pr-select-wrap">
@@ -441,6 +485,17 @@ export function CampBookingWidget({ zones, locale }: { zones: CampZoneOption[]; 
               I&apos;m okay receiving occasional offers by email (optional)
             </span>
           </label>
+
+          {price && price.addonsApplied.length > 0 && (
+            <ul className="pr-addon-summary">
+              {price.addonsApplied.map((a) => (
+                <li key={a.id}>
+                  <span>{a.name}</span>
+                  <span>+{baht(a.price)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
 
           <div className="pr-bform-total">
             <div>

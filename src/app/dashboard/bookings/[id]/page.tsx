@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getBookingDetail, listBookingLogs } from "@/lib/queries/bookings";
+import { listBookingAddons } from "@/lib/queries/addons";
 import { listParticipants } from "@/lib/queries/participants";
 import { changeBookingStatus, toggleCheckedIn, saveBookingNotes, notifyGuestEmail, markWhatsAppSent, refundBooking } from "../actions";
 import { requireStaff } from "@/lib/access";
@@ -15,6 +16,10 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   if (!booking) notFound();
 
   const logs = await listBookingLogs(id);
+  // The itemised extras this booking bought (name/price snapshotted at booking
+  // time, migration 0018) -- shown in the Pricing card so staff can see what
+  // the total includes.
+  const bookingAddons = await listBookingAddons(id);
   // Drives whether the refund form renders at all. The action re-checks the
   // role itself (requireAdmin) -- this only avoids showing a button that would
   // reject. Never the security boundary.
@@ -156,6 +161,12 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
               Transfer fee: {baht(booking.transfer_fee)}
             </>
           )}
+          {bookingAddons.map((a, i) => (
+            <span key={i}>
+              <br />
+              Add-on: {a.name_at_booking} ({baht(a.price_at_booking)})
+            </span>
+          ))}
           <br />
           <strong style={{ color: "var(--ink)" }}>Total: {baht(booking.total)}</strong> ({booking.currency})
         </p>

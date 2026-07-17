@@ -32,6 +32,13 @@ export interface BookingTourOption {
   fromPrice: number;
 }
 
+export interface BookingAddonOption {
+  id: string;
+  name: string;
+  description: string | null;
+  price: number;
+}
+
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 const INITIAL_STATE: BookingFormState = { status: "idle" };
 
@@ -52,10 +59,12 @@ function addDaysISO(days: number): string {
 export function BookingWidget({
   tours,
   pickupZones,
+  addons,
   locale,
 }: {
   tours: BookingTourOption[];
   pickupZones: PickupZone[];
+  addons: BookingAddonOption[];
   locale: string;
 }) {
   const [tourId, setTourId] = useState(tours[0]?.id ?? "");
@@ -70,6 +79,7 @@ export function BookingWidget({
   const [pickupZoneId, setPickupZoneId] = useState("");
   const [hotel, setHotel] = useState("");
   const [addonChoice, setAddonChoice] = useState("");
+  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [promoCode, setPromoCode] = useState("");
   const [guestName, setGuestName] = useState("");
   const [guestEmail, setGuestEmail] = useState("");
@@ -150,6 +160,7 @@ export function BookingWidget({
       infants,
       pickupZoneId: pickupZoneId || null,
       promoCode: promoCode.trim() || null,
+      addonIds: selectedAddonIds,
     })
       .then((result) => {
         if (requestId !== previewRequestId.current) return;
@@ -168,7 +179,7 @@ export function BookingWidget({
         console.error("previewTourPrice failed", err);
         setPriceError("Unable to calculate price right now.");
       });
-  }, [tourId, sessionId, adults, children, infants, pickupZoneId, promoCode, sessions]);
+  }, [tourId, sessionId, adults, children, infants, pickupZoneId, promoCode, selectedAddonIds, sessions]);
 
   // Stripe Checkout is a hosted page on Stripe's own domain, so this is a
   // full document navigation, not a router push. Done in an effect rather
@@ -315,6 +326,12 @@ export function BookingWidget({
           <input type="hidden" name="pickup_zone_id" value={pickupZoneId} />
           <input type="hidden" name="hotel" value={hotel} />
           <input type="hidden" name="addon_choice" value={addonChoice} />
+          {/* One hidden input per ticked add-on -- booking-actions.ts reads
+              them with formData.getAll("addon_ids"). The price is NOT sent;
+              it's re-resolved server-side from the id. */}
+          {selectedAddonIds.map((id) => (
+            <input key={id} type="hidden" name="addon_ids" value={id} />
+          ))}
           <input type="hidden" name="promo_code" value={promoCode} />
 
           <label className="pr-field">
@@ -455,6 +472,35 @@ export function BookingWidget({
             </div>
           </label>
 
+          {addons.length > 0 && (
+            <div className="pr-field">
+              <span className="pr-field-lbl">Add extras (optional)</span>
+              <div className="pr-addon-list">
+                {addons.map((a) => {
+                  const checked = selectedAddonIds.includes(a.id);
+                  return (
+                    <label key={a.id} className={"pr-addon" + (checked ? " pr-addon-on" : "")}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) =>
+                          setSelectedAddonIds((ids) =>
+                            e.target.checked ? [...ids, a.id] : ids.filter((x) => x !== a.id)
+                          )
+                        }
+                      />
+                      <span className="pr-addon-body">
+                        <span className="pr-addon-name">{a.name}</span>
+                        {a.description && <span className="pr-addon-desc">{a.description}</span>}
+                      </span>
+                      <span className="pr-addon-price">+{baht(a.price)}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <label className="pr-field">
             <span className="pr-field-lbl">Promo code (optional)</span>
             <div className="pr-select-wrap">
@@ -516,6 +562,17 @@ export function BookingWidget({
               I&apos;m okay receiving occasional offers by email (optional)
             </span>
           </label>
+
+          {price && price.addonsApplied.length > 0 && (
+            <ul className="pr-addon-summary">
+              {price.addonsApplied.map((a) => (
+                <li key={a.id}>
+                  <span>{a.name}</span>
+                  <span>+{baht(a.price)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
 
           <div className="pr-bform-total">
             <div>

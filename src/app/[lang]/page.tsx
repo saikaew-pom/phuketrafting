@@ -5,6 +5,7 @@ import { listPublishedReviews, listTourReviewStats } from "@/lib/queries/reviews
 import { listPickupZones } from "@/lib/queries/pickup";
 import { listImages } from "@/lib/queries/images";
 import { listActiveFaqs } from "@/lib/queries/faqs";
+import { listActiveAddons } from "@/lib/queries/addons";
 import { getSiteStats } from "@/lib/queries/settings";
 import { GALLERY } from "@/lib/content";
 import { SITE_URL, BUSINESS_NAME } from "@/lib/site";
@@ -89,6 +90,16 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
   ]);
   const siteStats = await getSiteStats();
   const faqRows = await listActiveFaqs();
+  // Priced add-ons (migration 0018), shown as tick-boxes in both booking
+  // widgets. The widget sends only the ticked ids; price/name are re-resolved
+  // server-side at booking time, so this list is display-only.
+  const addonRows = await listActiveAddons();
+  const bookingAddons = addonRows.map((a) => ({
+    id: a.id,
+    name: a.name,
+    description: a.description,
+    price: a.price,
+  }));
   // Dashboard-managed FAQ, shared by the visible accordion AND the FAQPage
   // JSON-LD so they can't drift. (F4-style CMS; seeded from the old constant.)
   const faqItems = faqRows.map((f) => ({ q: f.question, a: f.answer }));
@@ -175,10 +186,10 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
       {jsonLd.map((entry, i) => (
         <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(entry) }} />
       ))}
-      <Hero tours={bookingTours} pickupZones={pickupZones} locale={lang} stats={siteStats} />
+      <Hero tours={bookingTours} pickupZones={pickupZones} addons={bookingAddons} locale={lang} stats={siteStats} />
       <TrustBar stats={siteStats} />
       <Tours tours={tourCards} camping={camping} />
-      {activeCampZones.length > 0 && <CampBookingSection zones={activeCampZones} locale={lang} />}
+      {activeCampZones.length > 0 && <CampBookingSection zones={activeCampZones} addons={bookingAddons} locale={lang} />}
       <HowItWorks />
       <WhyUs stats={siteStats} />
       <Reviews reviews={reviewCards} stats={siteStats} />

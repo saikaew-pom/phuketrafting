@@ -115,6 +115,10 @@ export interface CreateTourBookingInput {
   pickupZoneId: string | null;
   hotel: string | null;
   addonChoice: string | null;
+  // Priced add-ons the guest ticked (migration 0018). Ids only -- a claim; the
+  // price and name are resolved authoritatively from D1 in calculateTourPrice,
+  // never trusted from the client. Snapshotted into booking_addons below.
+  addonIds?: string[];
   promoCode: string | null;
   locale: string;
   source: BookingSource;
@@ -189,6 +193,7 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
     infants: input.infants,
     pickupZoneId: input.pickupZoneId,
     promoCode: input.promoCode,
+    addonIds: input.addonIds,
   });
 
   // Resolve which promo_codes row (if any) this booking used, so it can be
@@ -284,7 +289,24 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
     )
     .bind(paxDelta, input.tourSessionId, ...guardBindExtra);
 
-  const [insertResult, updateResult] = await db.batch([insertStmt, updateStmt]);
+  // Snapshot each ticked add-on into booking_addons in the SAME batch, so the
+  // itemization commits atomically with the booking (or not at all). Each
+  // INSERT is guarded on the booking row actually existing -- the booking
+  // INSERT above is guarded on capacity, so if capacity failed there is no
+  // booking row and these must not write orphans (booking_id is a FK, so a
+  // stray row would throw and abort the whole batch). price.addonsApplied is
+  // the resolved-from-D1 list, so name/price are authoritative, not client
+  // claims. (Migration 0018.)
+  const addonStmts = price.addonsApplied.map((a) =>
+    db
+      .prepare(
+        `INSERT INTO booking_addons (id, booking_id, addon_id, name_at_booking, price_at_booking)
+         SELECT ?1, ?2, ?3, ?4, ?5 WHERE EXISTS (SELECT 1 FROM bookings WHERE id = ?2)`
+      )
+      .bind(crypto.randomUUID(), bookingId, a.id, a.name, a.price)
+  );
+
+  const [insertResult, updateResult] = await db.batch([insertStmt, updateStmt, ...addonStmts]);
 
   if (insertResult.meta.changes === 0 || updateResult.meta.changes === 0) {
     // Zero rows on both sides (see above -- they always agree) -- work out
@@ -330,6 +352,9 @@ export interface CreateCampBookingInput {
   guestEmail: string | null;
   guestPhone: string | null;
   promoCode: string | null;
+  // Priced add-ons the guest ticked (migration 0018). Ids only -- resolved
+  // authoritatively in calculateCampPrice, snapshotted into booking_addons.
+  addonIds?: string[];
   locale: string;
   source: BookingSource;
   bookedByAgentId: string | null;
@@ -384,6 +409,7 @@ export async function createCampBooking(input: CreateCampBookingInput): Promise<
     checkOut: input.checkOut,
     bookingDate: today,
     promoCode: input.promoCode,
+    addonIds: input.addonIds,
   });
 
   // See createTourBooking's identical step -- pure read, belongs before the
@@ -424,6 +450,29 @@ export async function createCampBooking(input: CreateCampBookingInput): Promise<
     },
   });
   if (!claim.success) return { success: false, reason: claim.reason };
+
+  // Snapshot ticked add-ons. Unlike the tour path (whose booking INSERT is a
+  // db.batch we control, so add-ons ride along atomically), the camp claim is a
+  // single guarded INSERT inside claimCampUnitBooking that we can't extend from
+  // here -- so, like this path's other side effects (booking_logs,
+  // promo_redemption), it's a post-commit best-effort write. The booking's
+  // total already carries the add-ons authoritatively; these rows are the
+  // itemization, and the booking exists (claim succeeded) so the FK holds.
+  if (price.addonsApplied.length > 0) {
+    await runPostCommitEffect(bookingId, "booking_addons", async () => {
+      const db = getDb();
+      await db.batch(
+        price.addonsApplied.map((a) =>
+          db
+            .prepare(
+              `INSERT INTO booking_addons (id, booking_id, addon_id, name_at_booking, price_at_booking)
+               VALUES (?1, ?2, ?3, ?4, ?5)`
+            )
+            .bind(crypto.randomUUID(), bookingId, a.id, a.name, a.price)
+        )
+      );
+    });
+  }
 
   await runPostCommitEffect(bookingId, "booking_logs", () =>
     logBookingEvent(bookingId, "system", "created", { source: input.source, total: price.total })

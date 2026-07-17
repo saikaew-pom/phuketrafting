@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getBookingByManageToken } from "@/lib/queries/bookings";
+import { listBookingAddons } from "@/lib/queries/addons";
 import { listParticipants } from "@/lib/queries/participants";
 import { getPaymentPolicy, isWithinCancellationWindow } from "@/lib/queries/settings";
 import { baht } from "@/lib/format";
@@ -34,6 +35,7 @@ export default async function ManageBookingPage({ params }: { params: Promise<{ 
   if (!booking) notFound();
 
   const participants = await listParticipants(booking.id);
+  const bookingAddons = await listBookingAddons(booking.id);
   const policy = await getPaymentPolicy();
   // null = we can't tell (no date on file / unparseable). Deliberately NOT
   // treated as "inside": telling a guest their deposit is refundable when we
@@ -109,6 +111,12 @@ export default async function ManageBookingPage({ params }: { params: Promise<{ 
               <br />
             </>
           )}
+          {bookingAddons.map((a, i) => (
+            <span key={i}>
+              Extra: {a.name_at_booking} ({baht(a.price_at_booking)})
+              <br />
+            </span>
+          ))}
           Status: {STATUS_LABEL[booking.status] ?? booking.status}
           <br />
           Total: {baht(booking.total)} {booking.currency}

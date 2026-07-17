@@ -1,7 +1,16 @@
 import { SectionHead } from "@/components/public/SectionHead";
 import { CampBookingWidget, type CampZoneOption } from "@/components/public/CampBookingWidget";
+import type { BookingAddonOption } from "@/components/public/BookingWidget";
 
-export function CampBookingSection({ zones, locale }: { zones: CampZoneOption[]; locale: string }) {
+export function CampBookingSection({
+  zones,
+  addons,
+  locale,
+}: {
+  zones: CampZoneOption[];
+  addons: BookingAddonOption[];
+  locale: string;
+}) {
   return (
     <section className="pr-section" id="camp-book">
       <div className="pr-wrap">
@@ -10,7 +19,7 @@ export function CampBookingSection({ zones, locale }: { zones: CampZoneOption[];
           title="Reserve your campsite"
           sub="Wake up to the sound of the rapids -- pick your dates and we'll hold your spot."
         />
-        <CampBookingWidget zones={zones} locale={locale} />
+        <CampBookingWidget zones={zones} addons={addons} locale={locale} />
       </div>
     </section>
   );

@@ -53,6 +53,7 @@ export async function previewTourPrice(input: {
   infants: number;
   pickupZoneId: string | null;
   promoCode: string | null;
+  addonIds?: string[];
 }): Promise<PriceBreakdown | { error: string }> {
   try {
     const requestHeaders = await headers();
@@ -129,6 +130,10 @@ const BookingSchema = z.object({
   pickupZoneId: z.string().trim().optional().or(z.literal("")),
   hotel: z.string().trim().max(200).optional().default(""),
   addonChoice: z.string().trim().max(60).optional().default(""),
+  // Priced add-ons the guest ticked -- ids only (a claim). Capped so a crafted
+  // POST can't send an unbounded list; the price/name are resolved from D1 in
+  // createTourBooking, never trusted from here. (Migration 0018.)
+  addonIds: z.array(z.string().trim().min(1)).max(50).optional().default([]),
   promoCode: z.string().trim().max(40).optional().default(""),
   locale: z.string(),
   consentMarketing: z.boolean(),
@@ -178,6 +183,10 @@ export async function submitTourBooking(_prevState: BookingFormState, formData: 
       pickupZoneId: formData.get("pickup_zone_id") ?? "",
       hotel: formData.get("hotel") ?? "",
       addonChoice: formData.get("addon_choice") ?? "",
+      // getAll -- the widget renders one hidden input per ticked add-on, all
+      // named "addon_ids". Absent (none ticked) yields [], which the schema
+      // defaults to anyway.
+      addonIds: formData.getAll("addon_ids").map(String),
       promoCode: formData.get("promo_code") ?? "",
       locale: formData.get("locale"),
       consentMarketing: formData.get("consent_marketing") === "on",
@@ -203,6 +212,7 @@ export async function submitTourBooking(_prevState: BookingFormState, formData: 
       pickupZoneId: data.pickupZoneId || null,
       hotel: data.hotel || null,
       addonChoice: data.addonChoice || null,
+      addonIds: data.addonIds,
       promoCode: data.promoCode || null,
       locale,
       source: "web",
