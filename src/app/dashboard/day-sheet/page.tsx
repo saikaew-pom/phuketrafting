@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { getDaySheet } from "@/lib/queries/bookings";
+import { bangkokTodayISO } from "@/lib/format";
 import { toggleCheckedIn } from "../bookings/actions";
 
+// Asia/Bangkok, not UTC: with a bare toISOString() the default "today" and the
+// "Today" button showed YESTERDAY's manifest between 00:00 and 07:00 Thailand
+// time -- exactly the pre-dawn hours crew prep the morning pickups. (Audit A7.)
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return bangkokTodayISO();
 }
 function addDaysISO(date: string, days: number): string {
   const d = new Date(`${date}T00:00:00Z`);

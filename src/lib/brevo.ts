@@ -40,19 +40,38 @@ async function sendViaBrevo(params: {
   html: string;
   replyTo?: { email: string; name?: string };
 }): Promise<void> {
-  const response = await fetch(BREVO_SEND_URL, {
-    method: "POST",
-    headers: { "api-key": params.apiKey, "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({
-      sender: { email: params.senderEmail, name: params.senderName },
-      to: params.to,
-      ...(params.replyTo ? { replyTo: params.replyTo } : {}),
-      subject: params.subject,
-      htmlContent: params.html,
-    }),
-  });
+  // Bounded, like the Stripe client's own 8s cap: sendBookingAck is awaited
+  // inline before a booking action returns "Booked!", and it makes two
+  // sequential sends -- a hung Brevo (no response, TCP just stalls) would
+  // otherwise leave the guest waiting indefinitely, conclude it failed, and
+  // rebook, double-claiming a seat. It also serially stalls the daily
+  // notification cron (40 guests x hang). A timeout turns "hung" into a normal
+  // failed send that the caller's fail-open path already handles. (Audit A8.)
+  let response: Response;
+  try {
+    response = await fetch(BREVO_SEND_URL, {
+      method: "POST",
+      headers: { "api-key": params.apiKey, "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        sender: { email: params.senderEmail, name: params.senderName },
+        to: params.to,
+        ...(params.replyTo ? { replyTo: params.replyTo } : {}),
+        subject: params.subject,
+        htmlContent: params.html,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    // AbortError (timeout) or a network error -- surface as the same "send
+    // failed" the callers already try/catch, rather than a raw TimeoutError.
+    throw new Error(`Brevo send failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
   if (!response.ok) {
-    throw new Error(`Brevo send failed: ${response.status}`);
+    // Include the response body -- Brevo's JSON error (bad sender, invalid
+    // recipient) is the diagnostic part, and it's what lands in booking_logs /
+    // cron logs. Truncated so a huge body can't bloat a log row. (Audit A30.)
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Brevo send failed: ${response.status}${detail ? ` ${detail.slice(0, 300)}` : ""}`);
   }
 }
 

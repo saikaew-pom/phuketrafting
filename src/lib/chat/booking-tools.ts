@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db";
 import { listAvailableTourSessions } from "@/lib/scheduling";
 import { calculateTourPrice } from "@/lib/pricing";
 import { listTours } from "@/lib/queries/tours";
+import { bangkokTodayISO } from "@/lib/format";
 import type { AiTool } from "@/lib/ai";
 
 /**
@@ -108,9 +109,13 @@ async function runListAvailability(input: Record<string, unknown>): Promise<Tool
     return { content: JSON.stringify({ error: `No active tour with id "${tourId}". Use an id from FACTS.` }) };
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const until = new Date(Date.now() + AVAILABILITY_WINDOW_DAYS * 86_400_000).toISOString().slice(0, 10);
-  const sessions = await listAvailableTourSessions(tour.id, today, until);
+  // Bangkok-today, matching the chat grounding and the public availability
+  // floor -- a bare UTC "today" would offer a departure dated local-yesterday
+  // between 00:00-07:00 Thailand time. (Audit A7 sibling.)
+  const today = bangkokTodayISO();
+  const until = new Date(`${today}T00:00:00Z`);
+  until.setUTCDate(until.getUTCDate() + AVAILABILITY_WINDOW_DAYS);
+  const sessions = await listAvailableTourSessions(tour.id, today, until.toISOString().slice(0, 10));
 
   return {
     content: JSON.stringify({
@@ -190,7 +195,7 @@ async function runPrepareBooking(input: Record<string, unknown>, conversationId:
   const price = await calculateTourPrice({
     tourId: session.tour_id,
     date: session.date,
-    bookingDate: new Date().toISOString().slice(0, 10),
+    bookingDate: bangkokTodayISO(), // (Audit A7 sibling — match createTourBooking's promo date)
     adults,
     children,
     infants,

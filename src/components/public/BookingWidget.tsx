@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import { Mountain, ChevronDown, Calendar, Minus, Plus, Zap, Check, Tag, MapPin, Sparkles } from "lucide-react";
-import { baht } from "@/lib/format";
+import { baht, bangkokTodayISO } from "@/lib/format";
 import {
   submitTourBooking,
   previewTourPrice,
@@ -20,7 +20,8 @@ declare global {
     // TypeScript requires every `declare global` copy of this interface to
     // agree, and the two forms on the manage page must reset by container
     // (see ManageBookingRequestForm.tsx). This form is the sole widget on its
-    // page, so its own bare reset() stays correct.
+    // Reset must target THIS widget by container: the landing page renders
+    // three Turnstile widgets, and a bare reset() clears only one. (Audit A4.)
     turnstile?: { reset: (widget?: string | HTMLElement) => void };
   }
 }
@@ -39,11 +40,11 @@ const INITIAL_STATE: BookingFormState = { status: "idle" };
 // further out than this.
 const AVAILABILITY_WINDOW_DAYS = 90;
 
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+// Both anchored to Bangkok-today (see bangkokTodayISO): a bare UTC date runs a
+// day behind between 00:00-07:00 Thailand time, which would offer a departure
+// dated local-yesterday. (Audit A7.)
 function addDaysISO(days: number): string {
-  const d = new Date();
+  const d = new Date(`${bangkokTodayISO()}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
@@ -61,6 +62,7 @@ export function BookingWidget({
   const [sessions, setSessions] = useState<AvailableTourSession[]>([]);
   const [sessionId, setSessionId] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
+  const turnstileRef = useRef<HTMLDivElement>(null);
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(0);
   const [infants, setInfants] = useState(0);
@@ -115,7 +117,7 @@ export function BookingWidget({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSessionId("");
     setSessions([]);
-    getTourAvailability(tourId, todayISO(), addDaysISO(AVAILABILITY_WINDOW_DAYS))
+    getTourAvailability(tourId, bangkokTodayISO(), addDaysISO(AVAILABILITY_WINDOW_DAYS))
       .then((result) => {
         if (requestId !== availabilityRequestId.current) return;
         setSessions(result);
@@ -182,11 +184,12 @@ export function BookingWidget({
 
   // Turnstile tokens are single-use -- a rejected submission (bad Zod field,
   // an already-spent token) must reset the widget or every resubmission
-  // attempt replays the dead token and fails forever until a page reload
-  // (same fix as EnquiryForm.tsx).
+  // attempt replays the dead token and fails forever until a page reload.
+  // Reset THIS widget by container: the landing page has three Turnstile
+  // widgets, and a bare reset() clears only one of them. (Audit A4.)
   useEffect(() => {
-    if (state.status === "error") {
-      window.turnstile?.reset();
+    if (state.status === "error" && turnstileRef.current) {
+      window.turnstile?.reset(turnstileRef.current);
     }
   }, [state]);
 
@@ -534,7 +537,7 @@ export function BookingWidget({
             <p className="pr-bform-split">Pay {baht(price.depositAmount)} now to confirm your booking.</p>
           )}
 
-          {TURNSTILE_SITE_KEY && <div className="cf-turnstile" data-sitekey={TURNSTILE_SITE_KEY} />}
+          {TURNSTILE_SITE_KEY && <div ref={turnstileRef} className="cf-turnstile" data-sitekey={TURNSTILE_SITE_KEY} />}
 
           <button
             className="pr-btn pr-btn-accent pr-btn-block pr-btn-lg"

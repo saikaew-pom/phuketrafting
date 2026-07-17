@@ -82,7 +82,15 @@ export default async function TourEditPage({ params }: { params: Promise<{ id: s
             {rates.map((rate) => (
               <label key={rate.id} className="pr-dash-field">
                 {rate.label ?? `Age ${rate.min_age}+`}
-                <input type="number" step="1" min="0" name={`rate-${rate.id}`} defaultValue={rate.price} />
+                {/* required for the same reason the camping rate inputs carry it:
+                    saveTour rejects a blank price by THROWING (a blank must never
+                    coerce to 0 -- Number("") is 0, which once made a tour FREE),
+                    and Next.js redacts Server Action error messages in production,
+                    so a staff member clearing a price to retype it would get an
+                    opaque "Reference: NNNN" instead of the reason. min="0" does
+                    NOT cover this -- HTML skips constraint validation on empty
+                    values. (Audit A6.) */}
+                <input type="number" step="1" min="0" required name={`rate-${rate.id}`} defaultValue={rate.price} />
               </label>
             ))}
           </div>

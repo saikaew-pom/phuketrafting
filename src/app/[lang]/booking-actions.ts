@@ -10,6 +10,7 @@ import { sendBookingAck } from "@/lib/booking-ack";
 import { calculateTourPrice, type PriceBreakdown } from "@/lib/pricing";
 import { listAvailableTourSessions, type AvailableTourSession } from "@/lib/scheduling";
 import { isSupportedLocale, DEFAULT_LOCALE } from "@/lib/i18n";
+import { bangkokTodayISO } from "@/lib/format";
 
 // Scope note: tour bookings only. Camp bookings need a "list available
 // units for a date range" query that doesn't exist yet (scheduling.ts only
@@ -61,8 +62,11 @@ export async function previewTourPrice(input: {
       return { error: "Too many requests -- please slow down." };
     }
 
-    const today = new Date().toISOString().slice(0, 10);
-    return await calculateTourPrice({ ...input, bookingDate: today });
+    // Bangkok, not UTC, so the promo-validity date in the preview matches what
+    // submitTourBooking/createTourBooking use -- otherwise between 00:00-07:00
+    // Thailand time the quoted price and the booked price could disagree on a
+    // date-boundary promo. Mirrors previewCampPrice. (Audit A7 sibling.)
+    return await calculateTourPrice({ ...input, bookingDate: bangkokTodayISO() });
   } catch (err) {
     // calculateTourPrice throws on a genuinely broken tour/rate config
     // (pricing.ts's own guards) -- that's a real "can't price this" state
@@ -83,7 +87,14 @@ export async function previewTourPrice(input: {
  * promoCode did, revisit this.
  */
 export async function getTourAvailability(tourId: string, fromDate: string, toDate: string): Promise<AvailableTourSession[]> {
-  return listAvailableTourSessions(tourId, fromDate, toDate);
+  // Floor the start of the window at Bangkok-today so a client-supplied
+  // fromDate (the widget computes it, and a bare UTC "today" runs a day behind
+  // between 00:00-07:00 local) can never surface a departure that has already
+  // passed. The booking action re-checks per session; this just keeps the
+  // picker honest. (Audit A7.)
+  const floor = bangkokTodayISO();
+  const from = fromDate < floor ? floor : fromDate;
+  return listAvailableTourSessions(tourId, from, toDate);
 }
 
 export interface BookingFormState {

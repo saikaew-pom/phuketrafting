@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import { Tent, ChevronDown, Calendar, Minus, Plus, Zap, Check, Tag } from "lucide-react";
-import { baht } from "@/lib/format";
+import { baht, bangkokTodayISO } from "@/lib/format";
 import {
   submitCampBooking,
   previewCampPrice,
@@ -21,7 +21,8 @@ declare global {
     // TypeScript requires every `declare global` copy of this interface to
     // agree, and the two forms on the manage page must reset by container
     // (see ManageBookingRequestForm.tsx). This form is the sole widget on its
-    // page, so its own bare reset() stays correct.
+    // Reset must target THIS widget by container: the landing page renders
+    // three Turnstile widgets, and a bare reset() clears only one. (Audit A4.)
     turnstile?: { reset: (widget?: string | HTMLElement) => void };
   }
 }
@@ -34,8 +35,10 @@ export interface CampZoneOption {
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 const INITIAL_STATE: CampBookingFormState = { status: "idle" };
 
+// Bangkok-today, not UTC -- a bare UTC date is a day behind between 00:00-07:00
+// Thailand time, offering a local-yesterday check-in. (Audit A7.)
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return bangkokTodayISO();
 }
 function addDaysISO(base: string, days: number): string {
   const d = new Date(`${base}T00:00:00Z`);
@@ -161,16 +164,19 @@ export function CampBookingWidget({ zones, locale }: { zones: CampZoneOption[]; 
     }
   }, [state]);
 
-  // Turnstile tokens are single-use -- same fix as BookingWidget.tsx.
+  // Turnstile tokens are single-use -- same fix as BookingWidget.tsx. Reset
+  // THIS widget by container: the landing page has three Turnstile widgets and
+  // a bare reset() clears only one. (Audit A4.)
   useEffect(() => {
-    if (state.status === "error") {
-      window.turnstile?.reset();
+    if (state.status === "error" && turnstileRef.current) {
+      window.turnstile?.reset(turnstileRef.current);
     }
   }, [state]);
 
   // Native form reset after a settled action desyncs <select> DOM values from
   // React state -- same fix as BookingWidget.tsx, applied to all three
   // selects here.
+  const turnstileRef = useRef<HTMLDivElement>(null);
   const zoneSelectRef = useRef<HTMLSelectElement>(null);
   const stayTypeSelectRef = useRef<HTMLSelectElement>(null);
   const unitSelectRef = useRef<HTMLSelectElement>(null);
@@ -458,7 +464,7 @@ export function CampBookingWidget({ zones, locale }: { zones: CampZoneOption[]; 
             <p className="pr-bform-split">Pay {baht(price.depositAmount)} now to confirm your booking.</p>
           )}
 
-          {TURNSTILE_SITE_KEY && <div className="cf-turnstile" data-sitekey={TURNSTILE_SITE_KEY} />}
+          {TURNSTILE_SITE_KEY && <div ref={turnstileRef} className="cf-turnstile" data-sitekey={TURNSTILE_SITE_KEY} />}
 
           <button
             className="pr-btn pr-btn-accent pr-btn-block pr-btn-lg"

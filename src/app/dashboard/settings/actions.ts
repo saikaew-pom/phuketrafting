@@ -15,7 +15,16 @@ import {
 const VALID_MODES: readonly PaymentMode[] = ["deposit", "full_prepay", "pay_on_day"];
 
 function requiredNumber(raw: FormDataEntryValue | null, label: string): number {
-  const n = Number(String(raw ?? "").trim());
+  const trimmed = String(raw ?? "").trim();
+  // Reject blank explicitly -- the function is *named* requiredNumber but the
+  // old body didn't require: Number("") is 0 (finite, passes), so a cleared
+  // field saved silently as 0. For "Daily AI budget" 0 reads as "stop
+  // spending" and turns the chatbot dark; for "Free cancellation window" 0
+  // wipes the free-cancel policy -- both with no error shown. The inputs also
+  // carry `required` now, but a direct POST bypasses HTML validation, so this
+  // is the real boundary. (Audit A5.)
+  if (!trimmed) throw new Error(`${label} is required.`);
+  const n = Number(trimmed);
   if (!Number.isFinite(n)) throw new Error(`Invalid ${label}`);
   return n;
 }

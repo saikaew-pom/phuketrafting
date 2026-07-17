@@ -1,6 +1,7 @@
 import { getDb } from "@/lib/db";
 import { claimCampUnitBooking } from "@/lib/scheduling";
 import { calculateTourPrice, calculateCampPrice } from "@/lib/pricing";
+import { bangkokTodayISO } from "@/lib/format";
 
 export type BookingSource = "web" | "chatbot" | "whatsapp" | "staff" | "ota" | "agent";
 
@@ -134,10 +135,28 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
 
   const db = getDb();
   const session = await db
-    .prepare("SELECT date, tour_id FROM tour_sessions WHERE id = ?1")
+    .prepare("SELECT date, start_time, tour_id FROM tour_sessions WHERE id = ?1")
     .bind(input.tourSessionId)
-    .first<{ date: string; tour_id: string }>();
+    .first<{ date: string; start_time: string; tour_id: string }>();
   if (!session) return { success: false, reason: "not_found" };
+
+  // A guest must not be able to book a departure that has already left. The
+  // widget filters by date, but a direct POST (or a stale open tab) can name a
+  // past session id -- listAvailableTourSessions never filtered on today, and
+  // there was no server-side clamp. Compared in Asia/Bangkok, where the trips
+  // run: a bare UTC "today" would wrongly reject a legitimate same-day booking
+  // between 00:00 and 07:00 local. Staff/agent sources are exempt -- they
+  // legitimately record a walk-in onto today's (or a just-run) departure.
+  // Returns not_found, which the widget already surfaces as "that date is no
+  // longer available". (Audit A7.)
+  if (input.source === "web") {
+    const nowBkk = new Date(Date.now() + 7 * 60 * 60 * 1000);
+    const bkkDate = nowBkk.toISOString().slice(0, 10);
+    const bkkTime = nowBkk.toISOString().slice(11, 16); // HH:MM, matches start_time's format
+    if (session.date < bkkDate || (session.date === bkkDate && session.start_time <= bkkTime)) {
+      return { success: false, reason: "not_found" };
+    }
+  }
 
   // input.tourId is client-supplied and, on its own, is just a claim -- the
   // session row (found via tourSessionId, the real trust anchor: an ID for
@@ -153,7 +172,9 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
   // missing-rate-band guards.
   if (session.tour_id !== input.tourId) return { success: false, reason: "invalid_input" };
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Bangkok, not UTC -- promo validity ("valid as of today") should use the
+  // day it actually is where the business operates. (Audit A7.)
+  const today = bangkokTodayISO();
 
   // Price BEFORE claiming capacity -- a bad tour/promo config should fail
   // fast without ever touching the session's booked_count. Pricing uses
@@ -346,7 +367,10 @@ export async function createCampBooking(input: CreateCampBookingInput): Promise<
   if (!unit) return { success: false, reason: "not_found" };
   if (unit.zone_id !== input.zoneId) return { success: false, reason: "invalid_input" };
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Bangkok, not UTC -- promo validity ("valid as of today") should use the day
+  // it actually is where the business operates. Mirrors createTourBooking above.
+  // (Audit A7 sibling.)
+  const today = bangkokTodayISO();
 
   // Price BEFORE claiming -- calculateCampPrice throws on a bad
   // zone/stayType/date combination (pricing.ts's own guards), which we let

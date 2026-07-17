@@ -7,10 +7,11 @@ import { verifyTurnstile } from "@/lib/turnstile";
 import { createCampBooking } from "@/lib/booking";
 import { openCheckoutForBooking } from "@/lib/checkout";
 import { sendBookingAck } from "@/lib/booking-ack";
-import { calculateCampPrice, type PriceBreakdown } from "@/lib/pricing";
+import { calculateCampPrice, MAX_STAY_NIGHTS, type PriceBreakdown } from "@/lib/pricing";
 import { listAvailableCampUnits, type AvailableCampUnit } from "@/lib/scheduling";
 import { getCampRates, type CampRate } from "@/lib/queries/camping";
 import { isSupportedLocale, DEFAULT_LOCALE } from "@/lib/i18n";
+import { bangkokTodayISO } from "@/lib/format";
 
 // Same shape as booking-actions.ts's tour-booking trio (previewTourPrice /
 // getTourAvailability / submitTourBooking) -- see that file's comments for
@@ -33,8 +34,7 @@ export async function previewCampPrice(input: {
       return { error: "Too many requests -- please slow down." };
     }
 
-    const today = new Date().toISOString().slice(0, 10);
-    return await calculateCampPrice({ ...input, bookingDate: today });
+    return await calculateCampPrice({ ...input, bookingDate: bangkokTodayISO() });
   } catch (err) {
     console.error("previewCampPrice failed", err);
     return { error: err instanceof Error ? err.message : "Unable to calculate price" };
@@ -65,8 +65,13 @@ const CampBookingSchema = z.object({
   zoneId: z.string().trim().min(1),
   campUnitId: z.string().trim().min(1, "Please choose a campsite."),
   stayType: z.string().trim().min(1),
-  checkIn: z.string().trim().min(1, "Please choose a check-in date."),
-  checkOut: z.string().trim().min(1, "Please choose a check-out date."),
+  // .max(10): a valid date is exactly "YYYY-MM-DD" (10 chars). Bounding the
+  // string is the cheapest backstop against a hostile far-future checkOut that
+  // would drive the day-by-day price loop for millions of iterations; the
+  // nights cap in submitCampBooking is the friendly, business-rule version.
+  // (Audit A2.)
+  checkIn: z.string().trim().min(1, "Please choose a check-in date.").max(10),
+  checkOut: z.string().trim().min(1, "Please choose a check-out date.").max(10),
   adults: z.coerce.number().int().min(0).max(20),
   children: z.coerce.number().int().min(0).max(20),
   infants: z.coerce.number().int().min(0).max(20),
@@ -140,12 +145,23 @@ export async function submitCampBooking(
     // pollutes the manifest guests actually see staff act on, so reject it
     // here with a specific message rather than let it either fail generically
     // or silently succeed.
-    const today = new Date().toISOString().slice(0, 10);
+    // Bangkok, not UTC: a bare toISOString() date is a day behind between
+    // 00:00 and 07:00 Thailand time, which would reject a legitimate same-day
+    // check-in during those hours. (Audit A7.)
+    const today = bangkokTodayISO();
     if (data.checkIn < today) {
       return { status: "error", message: "Please choose a check-in date that hasn't passed." };
     }
     if (data.checkOut <= data.checkIn) {
       return { status: "error", message: "Check-out must be after check-in." };
+    }
+    // Friendly form of the MAX_STAY_NIGHTS cap (the calculator throws a raw
+    // message the outer catch would turn into a generic error). (Audit A2.)
+    const nights = Math.round(
+      (new Date(`${data.checkOut}T00:00:00Z`).getTime() - new Date(`${data.checkIn}T00:00:00Z`).getTime()) / 86_400_000
+    );
+    if (nights > MAX_STAY_NIGHTS) {
+      return { status: "error", message: `Stays are up to ${MAX_STAY_NIGHTS} nights -- please shorten your dates or contact us for a longer booking.` };
     }
     const locale = isSupportedLocale(data.locale) ? data.locale : DEFAULT_LOCALE;
 

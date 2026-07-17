@@ -2,6 +2,24 @@ export function baht(amount: number): string {
   return "฿" + amount.toLocaleString("en-US");
 }
 
+/**
+ * Today's date (YYYY-MM-DD) in Asia/Bangkok, where the trips run. Thailand is
+ * UTC+7 year-round (no DST), so a fixed +7h shift off the same absolute instant
+ * is exact -- the same trick session-generator and the chat grounding use.
+ *
+ * The bug this exists to stop: `new Date().toISOString()` is the UTC date, so
+ * between 00:00 and 07:00 Thailand time it returns YESTERDAY -- which showed
+ * the day sheet crew yesterday's manifest during exactly the pre-dawn hours
+ * they prep the morning pickups, and let the booking widgets offer a departure
+ * dated local-yesterday. Safe to call in a client component: server and client
+ * shift the same instant by the same fixed offset, so they agree (no
+ * browser-locale dependence, no hydration mismatch outside the one-instant
+ * midnight straddle any "today" has).
+ */
+export function bangkokTodayISO(now: Date = new Date()): string {
+  return new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 /** D1 stores timestamps as unixepoch() seconds -- Date expects milliseconds. */
 export function formatDateTime(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toLocaleString("en-US", {

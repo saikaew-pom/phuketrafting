@@ -52,19 +52,19 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             </label>
             <label className="pr-dash-field">
               Deposit (%)
-              <input type="number" step="1" min="1" max="100" name="deposit_percent" defaultValue={Math.round(payment.depositRate * 100)} />
+              <input type="number" step="1" min="1" max="100" required name="deposit_percent" defaultValue={Math.round(payment.depositRate * 100)} />
               <span className="pr-dash-field-hint">Only used in deposit mode. The client-confirmed policy is 25%.</span>
             </label>
             <label className="pr-dash-field">
               Payment hold (minutes)
-              <input type="number" step="1" min="30" max="1439" name="hold_minutes" defaultValue={payment.holdMinutes} />
+              <input type="number" step="1" min="30" max="1439" required name="hold_minutes" defaultValue={payment.holdMinutes} />
               <span className="pr-dash-field-hint">
                 How long a seat is held while a guest pays. 30 min to 23h59m -- these are Stripe&apos;s own checkout limits.
               </span>
             </label>
             <label className="pr-dash-field">
               Free cancellation window (hours before departure)
-              <input type="number" step="1" min="0" max="720" name="cancellation_window_hours" defaultValue={payment.cancellationWindowHours} />
+              <input type="number" step="1" min="0" max="720" required name="cancellation_window_hours" defaultValue={payment.cancellationWindowHours} />
               <span className="pr-dash-field-hint">Guests cancelling earlier than this get their deposit back in full.</span>
             </label>
           </div>
@@ -82,7 +82,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             </label>
             <label className="pr-dash-field">
               Daily AI budget (tokens)
-              <input type="number" step="1000" min="0" name="daily_token_cap" defaultValue={chat.dailyTokenCap} />
+              <input type="number" step="1000" min="0" required name="daily_token_cap" defaultValue={chat.dailyTokenCap} />
               <span className="pr-dash-field-hint">
                 When the day&apos;s budget is used up, the assistant politely points guests to WhatsApp instead. Used today:{" "}
                 {spend.tokens.toLocaleString()} tokens.

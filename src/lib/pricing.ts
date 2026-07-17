@@ -2,6 +2,14 @@ import { getDb } from "@/lib/db";
 import { getPaymentPolicy, type PaymentPolicy } from "@/lib/queries/settings";
 
 /**
+ * The longest a single camp stay may be. Generous for a riverside camp (a
+ * month), but finite -- the day-by-day price loop must never run unbounded on
+ * a hostile far-future checkOut. Shared so the public actions and the
+ * calculator's own guard agree. (Audit A2.)
+ */
+export const MAX_STAY_NIGHTS = 30;
+
+/**
  * Pricing depth on top of the raw rate tables (plan §2: "child/seasonal/
  * promo/agent fields"). All tables here are real schema from Phase 1
  * (migrations/0002, 0004) but currently hold launch-config data only --
@@ -274,6 +282,16 @@ export async function calculateCampPrice(input: CampPriceInput): Promise<PriceBr
   }
   if (end <= cursor) {
     throw new Error(`checkOut (${input.checkOut}) must be after checkIn (${input.checkIn})`);
+  }
+  // Hard cap on the loop below. Without it, a direct POST with a far-future
+  // checkOut (e.g. 9999-12-31) makes this walk millions of days -- ~2.9M
+  // iterations / ~500ms of Worker CPU per request and a multi-billion-baht
+  // subtotal that would flow into a real deposit. The public actions bound
+  // this too (friendlier message), but this is the last line of defence for
+  // any caller. (Audit A2.)
+  const nights = Math.round((end.getTime() - cursor.getTime()) / 86_400_000);
+  if (nights > MAX_STAY_NIGHTS) {
+    throw new Error(`Stay length ${nights} nights exceeds the ${MAX_STAY_NIGHTS}-night maximum`);
   }
   while (cursor < end) {
     subtotal += WEEKEND_DAYS.has(cursor.getUTCDay()) ? weekendRate : weekdayRate;

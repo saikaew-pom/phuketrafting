@@ -1,13 +1,16 @@
 import { listTours } from "@/lib/queries/tours";
 import { listPickupZones } from "@/lib/queries/pickup";
 import { listTourSessionsForAdmin } from "@/lib/scheduling";
+import { bangkokTodayISO } from "@/lib/format";
 import { createStaffBooking } from "../actions";
 
+// Bangkok-today for the default date range, consistent with the day sheet and
+// availability calendars. (Audit A7.)
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return bangkokTodayISO();
 }
 function addDaysISO(days: number): string {
-  const d = new Date();
+  const d = new Date(`${bangkokTodayISO()}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }

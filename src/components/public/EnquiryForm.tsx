@@ -7,11 +7,12 @@ import { submitEnquiry, type EnquiryFormState } from "@/app/[lang]/enquiry-actio
 
 declare global {
   interface Window {
-    // Widened from (widgetId?: string) to also accept a container element:
-    // TypeScript requires every `declare global` copy of this interface to
-    // agree, and the two forms on the manage page must reset by container
-    // (see ManageBookingRequestForm.tsx). This form is the sole widget on its
-    // page, so its own bare reset() stays correct.
+    // Reset must target THIS form's widget by container element: the landing
+    // page renders three Turnstile widgets (BookingWidget, CampBookingWidget,
+    // this form), and a no-argument reset() clears only one of them -- so a
+    // bare reset() here would clear a different form's widget and leave this
+    // form's spent single-use token in place, locking the guest out on retry.
+    // Same container-scoped reset as ManageBookingRequestForm. (Audit A4.)
     turnstile?: { reset: (widget?: string | HTMLElement) => void };
   }
 }
@@ -26,15 +27,17 @@ const INITIAL_STATE: EnquiryFormState = { status: "idle" };
 export function EnquiryForm({ locale }: { locale: string }) {
   const [state, formAction, pending] = useActionState(submitEnquiry, INITIAL_STATE);
   const statusRef = useRef<HTMLParagraphElement>(null);
+  const turnstileRef = useRef<HTMLDivElement>(null);
 
   // Turnstile tokens are single-use. Any rejected submission (a bad Zod
   // field, an expired/already-consumed token) leaves the stale, now-spent
   // token sitting in the hidden input -- without a reset, resubmitting
   // after fixing the form replays that dead token and is wrongly rejected
-  // as "not human" every time, forever, until a full page reload.
+  // as "not human" every time, forever, until a full page reload. Reset THIS
+  // form's widget by container (see the Window type comment). (Audit A4.)
   useEffect(() => {
-    if (state.status === "error") {
-      window.turnstile?.reset();
+    if (state.status === "error" && turnstileRef.current) {
+      window.turnstile?.reset(turnstileRef.current);
     }
   }, [state]);
 
@@ -99,7 +102,7 @@ export function EnquiryForm({ locale }: { locale: string }) {
             </span>
           </label>
 
-          {TURNSTILE_SITE_KEY && <div className="cf-turnstile" data-sitekey={TURNSTILE_SITE_KEY} />}
+          {TURNSTILE_SITE_KEY && <div ref={turnstileRef} className="cf-turnstile" data-sitekey={TURNSTILE_SITE_KEY} />}
 
           <button className="pr-btn pr-btn-accent pr-btn-block" type="submit" disabled={pending}>
             <Send size={17} className="pr-ico" /> {pending ? "Sending..." : "Send message"}
