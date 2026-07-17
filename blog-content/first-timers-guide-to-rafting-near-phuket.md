@@ -6,7 +6,7 @@ excerpt: "A complete guide to white-water rafting near Phuket, covering exactly 
 author: "Phuket Rafting Team"
 featured: true
 cover_image_id: 
-published: false
+published: true
 ---
 
 ### Article

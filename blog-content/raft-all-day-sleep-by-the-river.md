@@ -6,7 +6,7 @@ excerpt: "A detailed guide to spending a full day and night at a Phang Nga river
 author: "Phuket Rafting Team"
 featured: false
 cover_image_id: 
-published: false
+published: true
 ---
 
 ### Article

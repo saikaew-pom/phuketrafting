@@ -6,7 +6,7 @@ excerpt: "A breakdown of the three glamping zones along the Song Phrak river —
 author: "Phuket Rafting Team"
 featured: false
 cover_image_id: 
-published: false
+published: true
 ---
 
 ### Article

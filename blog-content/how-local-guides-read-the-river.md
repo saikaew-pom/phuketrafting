@@ -6,7 +6,7 @@ excerpt: "This article explains how our guides read the Song Phraek River to cho
 author: "Phuket Rafting Team"
 featured: false
 cover_image_id: 
-published: false
+published: true
 ---
 
 ### Article

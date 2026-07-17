@@ -6,7 +6,7 @@ excerpt: "This article breaks down exactly what keeps you safe on the water — 
 author: "Phuket Rafting Team"
 featured: false
 cover_image_id: 
-published: false
+published: true
 ---
 
 ### Article

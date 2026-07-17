@@ -6,7 +6,7 @@ excerpt: "Everything you need to know about the Phang Nga zipline experience, fr
 author: "Phuket Rafting Team"
 featured: false
 cover_image_id: 
-published: false
+published: true
 ---
 
 ### Article

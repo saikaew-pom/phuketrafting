@@ -6,7 +6,7 @@ excerpt: "This guide covers what to expect from the Song Phraek River across wet
 author: "Phuket Rafting Team"
 featured: false
 cover_image_id: 
-published: false
+published: true
 ---
 
 ### Article

@@ -6,7 +6,7 @@ excerpt: "A clear breakdown of our Phuket rafting and adventure tour prices for 
 author: "Phuket Rafting Team"
 featured: true
 cover_image_id: 
-published: false
+published: true
 ---
 
 ### Article

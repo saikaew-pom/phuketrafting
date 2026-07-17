@@ -6,7 +6,7 @@ excerpt: "A complete guide to Phuket hotel transfers for the Phang Nga white-wat
 author: "Phuket Rafting Team"
 featured: false
 cover_image_id: 
-published: false
+published: true
 ---
 
 ### Article

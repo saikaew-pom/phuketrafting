@@ -6,7 +6,7 @@ excerpt: "A practical guide to what the ATV experience actually involves – fro
 author: "Phuket Rafting Team"
 featured: false
 cover_image_id: 
-published: false
+published: true
 ---
 
 ### Article
