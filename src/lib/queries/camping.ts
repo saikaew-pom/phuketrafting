@@ -35,6 +35,81 @@ export async function getCampZone(id: string): Promise<CampZone | null> {
   return getDb().prepare("SELECT * FROM camp_zones WHERE id = ?1").bind(id).first<CampZone>();
 }
 
+function slugifyZone(value: string): string {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "zone";
+}
+
+/**
+ * Creates a camp zone with the three standard stay packages (0 prices, staff
+ * set them on the edit page) so it's immediately priceable. Slug carries a
+ * random suffix -- internal only, just needs to be UNIQUE. Returns the new id.
+ */
+export async function createCampZone(name: string): Promise<string> {
+  const db = getDb();
+  const id = `zone-${crypto.randomUUID().slice(0, 12)}`;
+  const slug = `${slugifyZone(name)}-${crypto.randomUUID().slice(0, 6)}`;
+  const rate = (stayType: string, km: number | null) =>
+    db
+      .prepare(
+        `INSERT INTO camp_rates (id, zone_id, stay_type, includes_rafting_km, price_weekday, price_weekend)
+         VALUES (?1, ?2, ?3, ?4, 0, 0)`
+      )
+      .bind(`rate-${crypto.randomUUID().slice(0, 12)}`, id, stayType, km);
+  await db.batch([
+    db
+      // is_active = 0: a new zone has no prices/tents yet -- starts hidden, staff
+      // activate it once it's set up.
+      .prepare("INSERT INTO camp_zones (id, slug, name, is_active, sort_order) SELECT ?1, ?2, ?3, 0, COALESCE(MAX(sort_order), -1) + 1 FROM camp_zones")
+      .bind(id, slug, name),
+    rate("Stay & Dine", null),
+    rate("Stay + Raft 5.5", 5.5),
+    rate("Stay + Raft 7.5", 7.5),
+  ]);
+  return id;
+}
+
+/**
+ * Deletes a camp zone only if it's pristine -- no tents (camp_units) and no
+ * booking on any of them. Established zones are retired with the Active toggle.
+ * When clear, its owned children (rates, product images) go in the same batch.
+ */
+export async function deleteCampZone(id: string): Promise<"ok" | "blocked"> {
+  const db = getDb();
+  const blocker = await db
+    .prepare(
+      `SELECT 1 WHERE
+          EXISTS (SELECT 1 FROM camp_units WHERE zone_id = ?1)
+       OR EXISTS (SELECT 1 FROM bookings b JOIN camp_units u ON b.camp_unit_id = u.id WHERE u.zone_id = ?1)`
+    )
+    .bind(id)
+    .first();
+  if (blocker) return "blocked";
+  await db.batch([
+    db.prepare("DELETE FROM camp_rates WHERE zone_id = ?1").bind(id),
+    db.prepare("DELETE FROM product_images WHERE owner_type = 'camp_zone' AND owner_id = ?1").bind(id),
+    db.prepare("DELETE FROM camp_zones WHERE id = ?1").bind(id),
+  ]);
+  return "ok";
+}
+
+/** Reorders a camp zone, swapping sort_order with its neighbour, atomically. */
+export async function moveCampZone(id: string, direction: "up" | "down"): Promise<void> {
+  const db = getDb();
+  const row = await db.prepare("SELECT sort_order FROM camp_zones WHERE id = ?1").bind(id).first<{ sort_order: number }>();
+  if (!row) return;
+  const cmp = direction === "up" ? "<" : ">";
+  const order = direction === "up" ? "DESC" : "ASC";
+  const neighbour = await db
+    .prepare(`SELECT id, sort_order FROM camp_zones WHERE sort_order ${cmp} ?1 ORDER BY sort_order ${order} LIMIT 1`)
+    .bind(row.sort_order)
+    .first<{ id: string; sort_order: number }>();
+  if (!neighbour) return;
+  await db.batch([
+    db.prepare("UPDATE camp_zones SET sort_order = ?1 WHERE id = ?2").bind(neighbour.sort_order, id),
+    db.prepare("UPDATE camp_zones SET sort_order = ?1 WHERE id = ?2").bind(row.sort_order, neighbour.id),
+  ]);
+}
+
 export async function getCampRates(zoneId: string): Promise<CampRate[]> {
   const { results } = await getDb()
     .prepare("SELECT * FROM camp_rates WHERE zone_id = ?1 ORDER BY price_weekday")

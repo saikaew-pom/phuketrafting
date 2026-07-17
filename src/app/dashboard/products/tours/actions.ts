@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { updateTour, updateTourRatePrice } from "@/lib/queries/tours";
+import { updateTour, updateTourRatePrice, createTour, deleteTour, moveTour, tourCodeExists } from "@/lib/queries/tours";
 import { requireStaff } from "@/lib/access";
 
 // Signals an expected staff data-entry mistake -- caught in saveTour and turned
@@ -96,4 +96,42 @@ export async function saveTour(tourId: string, formData: FormData) {
   revalidatePath("/dashboard/products/tours");
   revalidatePath(`/dashboard/products/tours/${tourId}`);
   redirect(`/dashboard/products/tours/${tourId}?saved=1`);
+}
+
+/**
+ * Creates a tour (with the two standard age bands) and jumps to its edit page.
+ * Expected mistakes redirect back to the list with a ?error= banner. (CMS gap:
+ * product create.)
+ */
+export async function createTourAction(formData: FormData): Promise<void> {
+  await requireStaff();
+  const name = String(formData.get("name") ?? "").trim();
+  const code = String(formData.get("code") ?? "").trim().toUpperCase() || null;
+  const rawPrice = String(formData.get("adult_price") ?? "").trim();
+  const adultPrice = Number(rawPrice);
+
+  const fail = (c: string) => redirect(`/dashboard/products/tours?error=${c}`);
+  if (!name) fail("name_required");
+  if (!rawPrice || !Number.isFinite(adultPrice) || adultPrice < 0) fail("bad_price");
+  if (code && (await tourCodeExists(code))) fail("duplicate_code");
+
+  const id = await createTour(name, code, adultPrice);
+  revalidatePath("/dashboard/products/tours");
+  redirect(`/dashboard/products/tours/${id}?saved=1`);
+}
+
+export async function deleteTourAction(id: string): Promise<void> {
+  await requireStaff();
+  const result = await deleteTour(id);
+  revalidatePath("/dashboard/products/tours");
+  // A tour with a schedule/bookings/scoped promo can't be hard-deleted -- tell
+  // staff to deactivate instead of silently no-op'ing.
+  redirect(`/dashboard/products/tours${result === "blocked" ? "?error=has_activity" : ""}`);
+}
+
+export async function moveTourAction(id: string, direction: "up" | "down"): Promise<void> {
+  await requireStaff();
+  await moveTour(id, direction);
+  revalidatePath("/dashboard/products/tours");
+  revalidatePath("/[lang]", "page"); // public card order
 }

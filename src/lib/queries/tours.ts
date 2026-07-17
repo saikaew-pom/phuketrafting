@@ -56,6 +56,107 @@ export async function getTour(id: string): Promise<Tour | null> {
   return getDb().prepare("SELECT * FROM tours WHERE id = ?1").bind(id).first<Tour>();
 }
 
+function slugify(value: string): string {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "tour";
+}
+
+/** True if a code is already taken (codes are UNIQUE; blank code is allowed and never collides). */
+export async function tourCodeExists(code: string): Promise<boolean> {
+  if (!code) return false;
+  const row = await getDb().prepare("SELECT id FROM tours WHERE code = ?1").bind(code).first<{ id: string }>();
+  return row != null;
+}
+
+/**
+ * Creates a new tour with the two standard age bands (Under-6 free / non-
+ * capacity, Adult 6+) so it's immediately priceable and its edit page renders.
+ * sort_order = MAX+1 (appended last). The slug carries a random suffix -- it's
+ * internal only (tours render as cards, there's no /tour/[slug] page), so it
+ * just needs to be UNIQUE, not pretty. Returns the new id to redirect to.
+ */
+export async function createTour(name: string, code: string | null, adultPrice: number): Promise<string> {
+  const db = getDb();
+  const id = `tour-${crypto.randomUUID().slice(0, 12)}`;
+  const slug = `${slugify(name)}-${crypto.randomUUID().slice(0, 6)}`;
+  await db.batch([
+    db
+      // is_active = 0: a new tour has no description/cover/bullets yet, so it
+      // starts hidden. Staff fill it in on the edit page, then tick Active.
+      .prepare(
+        `INSERT INTO tours (id, slug, code, name, is_active, sort_order)
+         SELECT ?1, ?2, ?3, ?4, 0, COALESCE(MAX(sort_order), -1) + 1 FROM tours`
+      )
+      .bind(id, slug, code, name),
+    db
+      .prepare(
+        `INSERT INTO tour_rates (id, tour_id, min_age, max_age, label, price, counts_toward_capacity)
+         VALUES (?1, ?2, 0, 5, 'Under 6', 0, 0)`
+      )
+      .bind(`rate-${crypto.randomUUID().slice(0, 12)}`, id),
+    db
+      .prepare(
+        `INSERT INTO tour_rates (id, tour_id, min_age, max_age, label, price, counts_toward_capacity)
+         VALUES (?1, ?2, 6, NULL, 'Adult', ?3, 1)`
+      )
+      .bind(`rate-${crypto.randomUUID().slice(0, 12)}`, id, adultPrice),
+  ]);
+  return id;
+}
+
+/**
+ * Deletes a tour only if it's pristine -- no schedule, no bookings, no promo
+ * scoped to it. Anything established is retired with the Active toggle instead,
+ * the same history-preserving rule as camp units / promo codes: a tour with a
+ * booking anywhere in its past is a record a refund dispute is argued from.
+ * When clear, its owned children (rate bands, product images) go in the same
+ * batch. Returns 'blocked' so the caller can tell staff to deactivate.
+ */
+export async function deleteTour(id: string): Promise<"ok" | "blocked"> {
+  const db = getDb();
+  // Every table that FK-references tours(id) must be covered here, or the final
+  // DELETE below hits a FOREIGN KEY constraint (D1 enforces them) and throws --
+  // which the action surfaces as a redacted digest instead of the friendly
+  // banner. bookings ride via tour_sessions (covered). reviews.tour_id (staff
+  // attach a review to a tour) is the one that's easy to miss. tour_rates and
+  // product_images are owned and cascaded in the batch below, so they don't block.
+  const blocker = await db
+    .prepare(
+      `SELECT 1 WHERE
+          EXISTS (SELECT 1 FROM tour_sessions WHERE tour_id = ?1)
+       OR EXISTS (SELECT 1 FROM session_templates WHERE tour_id = ?1)
+       OR EXISTS (SELECT 1 FROM promo_codes WHERE scope_tour_id = ?1)
+       OR EXISTS (SELECT 1 FROM reviews WHERE tour_id = ?1)`
+    )
+    .bind(id)
+    .first();
+  if (blocker) return "blocked";
+
+  await db.batch([
+    db.prepare("DELETE FROM tour_rates WHERE tour_id = ?1").bind(id),
+    db.prepare("DELETE FROM product_images WHERE owner_type = 'tour' AND owner_id = ?1").bind(id),
+    db.prepare("DELETE FROM tours WHERE id = ?1").bind(id),
+  ]);
+  return "ok";
+}
+
+/** Reorders a tour one slot earlier/later, swapping sort_order with its neighbour, atomically. */
+export async function moveTour(id: string, direction: "up" | "down"): Promise<void> {
+  const db = getDb();
+  const row = await db.prepare("SELECT sort_order FROM tours WHERE id = ?1").bind(id).first<{ sort_order: number }>();
+  if (!row) return;
+  const cmp = direction === "up" ? "<" : ">";
+  const order = direction === "up" ? "DESC" : "ASC";
+  const neighbour = await db
+    .prepare(`SELECT id, sort_order FROM tours WHERE sort_order ${cmp} ?1 ORDER BY sort_order ${order} LIMIT 1`)
+    .bind(row.sort_order)
+    .first<{ id: string; sort_order: number }>();
+  if (!neighbour) return;
+  await db.batch([
+    db.prepare("UPDATE tours SET sort_order = ?1 WHERE id = ?2").bind(neighbour.sort_order, id),
+    db.prepare("UPDATE tours SET sort_order = ?1 WHERE id = ?2").bind(row.sort_order, neighbour.id),
+  ]);
+}
+
 export async function getTourRates(tourId: string): Promise<TourRate[]> {
   const { results } = await getDb()
     .prepare("SELECT * FROM tour_rates WHERE tour_id = ?1 ORDER BY min_age")

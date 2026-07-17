@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import {
   updateCampZone,
   updateCampRatePrices,
@@ -8,6 +9,9 @@ import {
   updateCampUnit,
   setCampUnitBlocked,
   deleteCampUnit,
+  createCampZone,
+  deleteCampZone,
+  moveCampZone,
 } from "@/lib/queries/camping";
 import { requireStaff } from "@/lib/access";
 
@@ -143,4 +147,32 @@ export async function removeCampUnit(zoneId: string, unitId: string): Promise<vo
     );
   }
   revalidateZone(zoneId);
+}
+
+/**
+ * Creates a camp zone (with the three standard stay packages) and jumps to its
+ * edit page. (CMS gap: product create.)
+ */
+export async function createCampZoneAction(formData: FormData): Promise<void> {
+  await requireStaff();
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) redirect("/dashboard/products/camping?error=name_required");
+  const id = await createCampZone(name);
+  revalidatePath("/dashboard/products/camping");
+  redirect(`/dashboard/products/camping/${id}?saved=1`);
+}
+
+export async function deleteCampZoneAction(id: string): Promise<void> {
+  await requireStaff();
+  const result = await deleteCampZone(id);
+  revalidatePath("/dashboard/products/camping");
+  // A zone with tents/bookings can't be hard-deleted -- deactivate instead.
+  redirect(`/dashboard/products/camping${result === "blocked" ? "?error=has_activity" : ""}`);
+}
+
+export async function moveCampZoneAction(id: string, direction: "up" | "down"): Promise<void> {
+  await requireStaff();
+  await moveCampZone(id, direction);
+  revalidatePath("/dashboard/products/camping");
+  revalidatePath("/[lang]", "page");
 }
