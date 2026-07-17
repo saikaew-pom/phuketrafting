@@ -301,6 +301,10 @@ const FIELD_MAX_LENGTHS: Record<string, number> = {
   hotel: 200,
   addon_choice: 60,
   promo_code: 40,
+  // 254 = RFC 5321's max email length. Every other free-text field is bounded;
+  // guest_email was raw (type="email" is client-only), so a direct POST could
+  // store an arbitrarily long string later fed to Brevo. (Audit A22.)
+  guest_email: 254,
 };
 
 function parseBoundedText(formData: FormData, key: string): string {
@@ -358,7 +362,7 @@ export async function createStaffBooking(formData: FormData) {
     children,
     infants,
     guestName,
-    guestEmail: String(formData.get("guest_email") ?? "").trim() || null,
+    guestEmail: parseBoundedText(formData, "guest_email") || null,
     guestPhone: parseBoundedText(formData, "guest_phone") || null,
     pickupZoneId: String(formData.get("pickup_zone_id") ?? "").trim() || null,
     hotel: parseBoundedText(formData, "hotel") || null,

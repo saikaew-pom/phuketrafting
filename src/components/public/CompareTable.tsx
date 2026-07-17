@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Minus, LayoutGrid, X } from "lucide-react";
 import { baht } from "@/lib/format";
 import type { TourCard } from "@/components/public/Tours";
@@ -24,6 +24,26 @@ import type { TourCard } from "@/components/public/Tours";
  */
 export function CompareTable({ tours }: { tours: TourCard[] }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // Dialog a11y (Audit A28): Escape closes it, focus moves into the dialog on
+  // open (to the close button) and returns to the trigger on close, so a
+  // keyboard user isn't stranded behind an aria-modal overlay. (A full
+  // tab-cycle trap is a further nicety; this covers the practical gaps.)
+  useEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current; // capture for the cleanup (lint-safe)
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      trigger?.focus();
+    };
+  }, [open]);
 
   if (tours.length === 0) return null;
 
@@ -36,16 +56,24 @@ export function CompareTable({ tours }: { tours: TourCard[] }) {
 
   return (
     <>
-      <button type="button" className="pr-btn pr-btn-dark pr-btn-lg" onClick={() => setOpen(true)}>
+      <button ref={triggerRef} type="button" className="pr-btn pr-btn-dark pr-btn-lg" onClick={() => setOpen(true)}>
         <LayoutGrid size={17} className="pr-ico" /> Compare all packages
       </button>
 
       {open && (
-        <div className="pr-compare-overlay" role="dialog" aria-modal="true" aria-label="Compare packages">
-          <div className="pr-compare-panel">
+        // Clicking the backdrop (but not the panel) closes it -- a standard
+        // dialog affordance and an extra keyboard-independent escape. (A28.)
+        <div
+          className="pr-compare-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Compare packages"
+          onClick={() => setOpen(false)}
+        >
+          <div className="pr-compare-panel" onClick={(e) => e.stopPropagation()}>
             <div className="pr-compare-head">
               <h3>Compare packages</h3>
-              <button type="button" className="pr-compare-close" onClick={() => setOpen(false)} aria-label="Close">
+              <button ref={closeRef} type="button" className="pr-compare-close" onClick={() => setOpen(false)} aria-label="Close">
                 <X size={20} className="pr-ico" />
               </button>
             </div>

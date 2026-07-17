@@ -123,7 +123,7 @@ export default async function NewBookingPage({
               </label>
               <label className="pr-dash-field">
                 Email
-                <input type="email" name="guest_email" />
+                <input type="email" name="guest_email" maxLength={254} />
               </label>
               <label className="pr-dash-field">
                 Phone

@@ -20,7 +20,17 @@ export function PickupZoneFields({ zone }: { zone: PickupZoneRow | null }) {
         </label>
         <label className="pr-dash-field">
           Earliest pickup time
-          <input name="earliest_pickup_time" defaultValue={zone?.earliest_pickup_time ?? ""} placeholder="07:30" />
+          {/* pattern mirrors the server's HH:MM range check (pickup/actions.ts),
+              which throws on a bad time -- and that throw is redacted in
+              production. Catch "19:60"-style typos in the browser instead.
+              (Audit A23.) */}
+          <input
+            name="earliest_pickup_time"
+            defaultValue={zone?.earliest_pickup_time ?? ""}
+            placeholder="07:30"
+            pattern="([01][0-9]|2[0-3]):[0-5][0-9]"
+            title="24-hour time, e.g. 07:30"
+          />
           <span className="pr-dash-field-hint">24-hour time, or blank if it doesn&apos;t apply.</span>
         </label>
         <label className="pr-dash-field">

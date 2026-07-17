@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { requireStaff } from "@/lib/access";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { createPost, updatePost, deletePost, getPostBySlug, isBlogCategory, type BlogPostInput } from "@/lib/queries/blog";
 import { generateBlogDraft, generateBlogExcerpt } from "@/lib/blog-ai";
 import { DEFAULT_LOCALE } from "@/lib/i18n";
@@ -148,8 +149,22 @@ export interface AiResult {
  * invoke like any RPC, and here the result fills a textarea in place rather
  * than submitting/reloading the page the way createBlogPost/saveBlogPost do.
  */
+// Bounds how often ONE staff member can trigger a (paid) model call.
+// Per-call cost is already capped by maxTokens in blog-ai.ts; this caps the
+// FREQUENCY, so a scripted or compromised staff session can't loop the button
+// and run up an unbounded bill. Keyed on the staff email, not IP. Deliberately
+// NOT metered against the guest chatbot's dailyTokenCap -- that budget protects
+// a different surface, and sharing it would let staff drafts starve the bot (or
+// vice versa). (Audit A25.)
+async function assertStaffAiAllowed(email: string): Promise<AiResult | null> {
+  const allowed = await checkRateLimit(`staff-ai:${email}`, 20, 60);
+  return allowed ? null : { text: null, error: "Too many AI requests -- please wait a minute and try again." };
+}
+
 export async function generateDraftAction(title: string, category: string): Promise<AiResult> {
-  await requireStaff();
+  const staff = await requireStaff();
+  const limited = await assertStaffAiAllowed(staff.email);
+  if (limited) return limited;
   if (!title.trim()) return { text: null, error: "Enter a title first." };
   if (!isBlogCategory(category)) return { text: null, error: "Choose a category first." };
 
@@ -164,7 +179,9 @@ export async function generateDraftAction(title: string, category: string): Prom
 }
 
 export async function generateExcerptAction(body: string): Promise<AiResult> {
-  await requireStaff();
+  const staff = await requireStaff();
+  const limited = await assertStaffAiAllowed(staff.email);
+  if (limited) return limited;
   if (!body.trim()) return { text: null, error: "Write (or generate) the article body first." };
 
   const { env } = getCloudflareContext();

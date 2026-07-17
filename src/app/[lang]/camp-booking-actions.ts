@@ -36,18 +36,35 @@ export async function previewCampPrice(input: {
 
     return await calculateCampPrice({ ...input, bookingDate: bangkokTodayISO() });
   } catch (err) {
+    // Generic message -- calculateCampPrice's throws carry internal detail
+    // (rate/zone ids) that shouldn't reach an unauthenticated caller. (A21.)
     console.error("previewCampPrice failed", err);
-    return { error: err instanceof Error ? err.message : "Unable to calculate price" };
+    return { error: "We couldn't calculate that price -- please adjust your dates or contact us." };
   }
+}
+
+/**
+ * True (allowed) unless the caller is over the loose read limit. Every export of
+ * this "use server" file is a directly-POST-reachable endpoint; unlike the tour
+ * availability read (one plain indexed SELECT, deliberately open), the camp
+ * reads run a correlated NOT EXISTS per unit / a rates scan, so they get the
+ * same loose per-IP limit the price preview uses so they can't be hammered for
+ * free. (Audit A20.)
+ */
+async function campReadAllowed(): Promise<boolean> {
+  const cfIp = (await headers()).get("cf-connecting-ip");
+  return checkRateLimit(`camp-read:${cfIp ?? "no-cf-ip"}`, 30, 10);
 }
 
 /** Camp units with no overlapping booking for one zone/date-range -- feeds the widget's unit picker. */
 export async function getCampAvailability(zoneId: string, checkIn: string, checkOut: string): Promise<AvailableCampUnit[]> {
+  if (!(await campReadAllowed())) return [];
   return listAvailableCampUnits(zoneId, checkIn, checkOut);
 }
 
 /** Active stay-type rates for one zone -- feeds the widget's stay-type picker. */
 export async function getCampZoneRates(zoneId: string): Promise<CampRate[]> {
+  if (!(await campReadAllowed())) return [];
   const rates = await getCampRates(zoneId);
   return rates.filter((r) => r.is_active);
 }

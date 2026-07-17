@@ -43,7 +43,7 @@ export default async function LangLayout({
   return (
     <div className={`pr-app ${sora.variable} ${plusJakartaSans.variable}`}>
       <Analytics />
-      <Nav />
+      <Nav locale={lang} />
       {children}
       <Footer locale={lang} />
       <ConsentBanner locale={lang} />

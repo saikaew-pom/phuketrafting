@@ -27,20 +27,24 @@ export async function Footer({ locale }: { locale: string }) {
         </div>
         <div className="pr-footer-col">
           <h4>Tour packages</h4>
+          {/* Locale-prefixed so these work from the blog/manage/legal pages too,
+              where a bare "#tours" points at a section that doesn't exist.
+              Link (not <a>) keeps it a client nav rather than a full reload.
+              (Audit A27.) */}
           {tours
             .filter((t) => t.is_active)
             .map((t) => (
-              <a key={t.id} href="#tours">
+              <Link key={t.id} href={`/${locale}#tours`}>
                 {t.name}
-              </a>
+              </Link>
             ))}
         </div>
         <div className="pr-footer-col">
           <h4>Explore</h4>
-          <a href="#tours">All tour packages</a>
-          <a href="#why">Why choose us</a>
-          <a href="#reviews">Reviews</a>
-          <a href="#faq">FAQ</a>
+          <Link href={`/${locale}#tours`}>All tour packages</Link>
+          <Link href={`/${locale}#why`}>Why choose us</Link>
+          <Link href={`/${locale}#reviews`}>Reviews</Link>
+          <Link href={`/${locale}#faq`}>FAQ</Link>
           <Link href={`/${locale}/blog`}>Blog</Link>
         </div>
         <div className="pr-footer-col">

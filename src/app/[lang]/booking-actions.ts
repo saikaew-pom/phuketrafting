@@ -62,17 +62,23 @@ export async function previewTourPrice(input: {
       return { error: "Too many requests -- please slow down." };
     }
 
+    // Reject non-integer/negative party counts before pricing -- a direct POST
+    // with adults: 2.5 would otherwise price fractionally. (Audit A21.)
+    if (![input.adults, input.children, input.infants].every((n) => Number.isInteger(n) && n >= 0)) {
+      return { error: "Please check the guest counts." };
+    }
+
     // Bangkok, not UTC, so the promo-validity date in the preview matches what
     // submitTourBooking/createTourBooking use -- otherwise between 00:00-07:00
     // Thailand time the quoted price and the booked price could disagree on a
     // date-boundary promo. Mirrors previewCampPrice. (Audit A7 sibling.)
     return await calculateTourPrice({ ...input, bookingDate: bangkokTodayISO() });
   } catch (err) {
-    // calculateTourPrice throws on a genuinely broken tour/rate config
-    // (pricing.ts's own guards) -- that's a real "can't price this" state
-    // the caller needs to know about, not something to paper over here.
+    // Log the real reason, but return a GENERIC message: calculateTourPrice's
+    // throws carry internal config detail (e.g. rate-band ids) that shouldn't
+    // reach an unauthenticated caller. (Audit A21.)
     console.error("previewTourPrice failed", err);
-    return { error: err instanceof Error ? err.message : "Unable to calculate price" };
+    return { error: "We couldn't calculate that price -- please adjust your selection or contact us." };
   }
 }
 

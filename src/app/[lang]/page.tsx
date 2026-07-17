@@ -146,7 +146,7 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
 
   const stickyFromPrice = Math.min(...tourCards.map((t) => t.fromPrice).filter((p) => p > 0), minCampRate ?? Infinity);
 
-  const jsonLd = [buildOrganizationJsonLd(), ...buildProductsJsonLd(tourCards), buildFaqJsonLd()];
+  const jsonLd = [buildOrganizationJsonLd(), ...buildProductsJsonLd(tourCards, lang), buildFaqJsonLd()];
 
   return (
     <>

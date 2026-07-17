@@ -109,9 +109,13 @@ export async function updateTour(id: string, update: TourUpdate): Promise<void> 
     .run();
 }
 
-export async function updateTourRatePrice(rateId: string, price: number): Promise<void> {
+// tourId scopes the update: without it, any rate-<id> key in the POST could
+// reprice a DIFFERENT tour's rate row (staff-only, so not an auth hole, but a
+// crafted/stale form would silently mis-price another tour and skip its
+// revalidation). (Audit A24.)
+export async function updateTourRatePrice(rateId: string, tourId: string, price: number): Promise<void> {
   await getDb()
-    .prepare("UPDATE tour_rates SET price = ?1 WHERE id = ?2")
-    .bind(price, rateId)
+    .prepare("UPDATE tour_rates SET price = ?1 WHERE id = ?2 AND tour_id = ?3")
+    .bind(price, rateId, tourId)
     .run();
 }

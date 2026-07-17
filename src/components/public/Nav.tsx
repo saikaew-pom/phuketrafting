@@ -1,24 +1,32 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { MessageCircle, Menu, X } from "lucide-react";
 import { waLink } from "@/lib/whatsapp";
 
-// Tour Packages / Camping Stay are dedicated pages in the original prototype
-// (Tour Packages.html, Camping Stay.html) -- not yet ported, so these link to
-// the on-page sections that exist today instead of a route that would 404.
+// The sections these anchor to only exist on the landing page. On any other
+// page under [lang] (blog, manage, privacy...) a bare "#tours" points at
+// nothing, so the links did nothing. hrefFor() prefixes the locale-home path
+// when we're NOT on the landing page, so they navigate home and then scroll;
+// on the landing page they stay bare hashes to keep the in-page smooth scroll.
+// (Audit A27.)
 const LINKS = [
-  { href: "#top", label: "Home" },
-  { href: "#tours", label: "Adventures" },
-  { href: "#why", label: "Why us" },
-  { href: "#reviews", label: "Reviews" },
-  { href: "#faq", label: "FAQ" },
+  { hash: "#top", label: "Home" },
+  { hash: "#tours", label: "Adventures" },
+  { hash: "#why", label: "Why us" },
+  { hash: "#reviews", label: "Reviews" },
+  { hash: "#faq", label: "FAQ" },
 ];
 
-export function Nav() {
+export function Nav({ locale }: { locale: string }) {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+
+  // Landing page is exactly /<locale> (or "/" before the locale rewrite).
+  const onLanding = pathname === `/${locale}` || pathname === "/";
+  const hrefFor = (hash: string) => (onLanding ? hash : `/${locale}${hash}`);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -29,14 +37,14 @@ export function Nav() {
   return (
     <header className={"pr-nav" + (scrolled ? " pr-nav-scrolled" : "")}>
       <div className="pr-nav-inner">
-        <Link href="#top" className="pr-brand">
+        <a href={hrefFor("#top")} className="pr-brand">
           <span className="pr-brand-name">
             PHUKET <span>RAFTING</span>
           </span>
-        </Link>
+        </a>
         <nav className="pr-nav-links">
           {LINKS.map((l) => (
-            <a key={l.href} href={l.href}>
+            <a key={l.hash} href={hrefFor(l.hash)}>
               {l.label}
             </a>
           ))}
@@ -53,7 +61,7 @@ export function Nav() {
           {/* #top = the hero's booking form. It pointed at #book, which is the
               closing CTA section, not the form -- so "Book now" scrolled past
               the booking widget to a different button. */}
-          <a className="pr-btn pr-btn-accent" href="#top">
+          <a className="pr-btn pr-btn-accent" href={hrefFor("#top")}>
             Book now
           </a>
           <button className="pr-nav-burger" onClick={() => setOpen(!open)} aria-label="Menu">
@@ -64,7 +72,7 @@ export function Nav() {
       {open && (
         <div className="pr-nav-mobile">
           {LINKS.map((l) => (
-            <a key={l.href} href={l.href} onClick={() => setOpen(false)}>
+            <a key={l.hash} href={hrefFor(l.hash)} onClick={() => setOpen(false)}>
               {l.label}
             </a>
           ))}

@@ -16,11 +16,19 @@ export function FAQ() {
         <div className="pr-faq">
           {FAQS.map((f, i) => (
             <div className={"pr-faq-item" + (open === i ? " pr-faq-open" : "")} key={f.q}>
-              <button className="pr-faq-q" onClick={() => setOpen(open === i ? -1 : i)}>
+              {/* aria-expanded/controls so a screen reader announces the
+                  accordion state and links the button to its panel. (Audit A28.) */}
+              <button
+                className="pr-faq-q"
+                onClick={() => setOpen(open === i ? -1 : i)}
+                aria-expanded={open === i}
+                aria-controls={`pr-faq-panel-${i}`}
+                id={`pr-faq-q-${i}`}
+              >
                 <span>{f.q}</span>
                 {open === i ? <Minus size={18} className="pr-ico" /> : <Plus size={18} className="pr-ico" />}
               </button>
-              <div className="pr-faq-a">
+              <div className="pr-faq-a" id={`pr-faq-panel-${i}`} role="region" aria-labelledby={`pr-faq-q-${i}`}>
                 <p>{f.a}</p>
               </div>
             </div>

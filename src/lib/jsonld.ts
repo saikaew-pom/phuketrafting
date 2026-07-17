@@ -49,7 +49,7 @@ export function buildOrganizationJsonLd() {
   };
 }
 
-export function buildProductsJsonLd(tours: TourCard[]) {
+export function buildProductsJsonLd(tours: TourCard[], lang: string) {
   return tours.map((tour) => ({
     "@context": "https://schema.org",
     "@type": "Product",
@@ -61,7 +61,9 @@ export function buildProductsJsonLd(tours: TourCard[]) {
       price: tour.fromPrice,
       priceCurrency: "THB",
       availability: "https://schema.org/InStock",
-      url: `${SITE_URL}/en#tours`,
+      // The offer URL points at the page it's embedded on, per locale -- was
+      // hardcoded /en on every locale's markup. (Audit A26.)
+      url: `${SITE_URL}/${lang}#tours`,
     },
     ...(tour.avgRating != null && tour.reviewCount != null
       ? {

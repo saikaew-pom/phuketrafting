@@ -85,7 +85,7 @@ export async function saveTour(tourId: string, formData: FormData) {
       includes: JSON.stringify(includes),
       sort_order: optionalNumber(formData.get("sort_order"), "sort order", { integer: true }) ?? 0,
     });
-    for (const r of rateUpdates) await updateTourRatePrice(r.id, r.price);
+    for (const r of rateUpdates) await updateTourRatePrice(r.id, tourId, r.price);
   } catch (err) {
     if (err instanceof TourFormError) {
       redirect(`/dashboard/products/tours/${tourId}?error=${err.code}`);
