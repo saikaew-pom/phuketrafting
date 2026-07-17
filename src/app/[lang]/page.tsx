@@ -3,7 +3,9 @@ import { listTours, getTourRates, parseIncludes } from "@/lib/queries/tours";
 import { listCampZones, getMinCampRate } from "@/lib/queries/camping";
 import { listPublishedReviews, listTourReviewStats } from "@/lib/queries/reviews";
 import { listPickupZones } from "@/lib/queries/pickup";
+import { listImages } from "@/lib/queries/images";
 import { getSiteStats } from "@/lib/queries/settings";
+import { GALLERY } from "@/lib/content";
 import { SITE_URL, BUSINESS_NAME } from "@/lib/site";
 import { SUPPORTED_LOCALES, DEFAULT_LOCALE } from "@/lib/i18n";
 import { serializeJsonLd, buildOrganizationJsonLd, buildProductsJsonLd, buildFaqJsonLd } from "@/lib/jsonld";
@@ -76,14 +78,23 @@ function fromPrice(rates: { price: number }[]): number {
 
 export default async function LandingPage({ params }: { params: Promise<{ lang: string }> }) {
   const { lang } = await params;
-  const [allTours, campZones, reviews, tourReviewStats, pickupZones] = await Promise.all([
+  const [allTours, campZones, reviews, tourReviewStats, pickupZones, galleryRows] = await Promise.all([
     listTours(),
     listCampZones(),
     listPublishedReviews(),
     listTourReviewStats(),
     listPickupZones(),
+    listImages("gallery", null),
   ]);
   const siteStats = await getSiteStats();
+
+  // Dashboard-managed gallery, falling back to the hardcoded launch set while
+  // the gallery table is empty -- so the section is never blank and staff can
+  // take it over image by image. (Audit #6 / F4.)
+  const galleryItems =
+    galleryRows.length > 0
+      ? galleryRows.map((g) => ({ publicId: g.image_id, label: g.label ?? "" }))
+      : GALLERY.map((g) => ({ publicId: g.publicId, label: g.label }));
 
   // listTours()/listCampZones() return every row, active or not (the
   // dashboard listing needs inactive rows too, to let staff re-enable them)
@@ -160,7 +171,7 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
       <HowItWorks />
       <WhyUs stats={siteStats} />
       <Reviews reviews={reviewCards} stats={siteStats} />
-      <Gallery />
+      <Gallery items={galleryItems} />
       <FAQ />
       <EnquirySection locale={lang} />
       <FinalCTA />

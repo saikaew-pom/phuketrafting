@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getCampZone, getCampRates, listCampUnits } from "@/lib/queries/camping";
 import { saveCampZone, addCampUnit, saveCampUnit, toggleCampUnitBlocked, removeCampUnit } from "../actions";
 import { ImageUploadField } from "@/components/ImageUploadField";
+import { ProductImageManager } from "@/components/ProductImageManager";
 
 export default async function CampZoneEditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -247,6 +248,8 @@ export default async function CampZoneEditPage({ params }: { params: Promise<{ i
           </button>
         </form>
       </div>
+
+      <ProductImageManager ownerType="camp_zone" ownerId={id} />
     </div>
   );
 }

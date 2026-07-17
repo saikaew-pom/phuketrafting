@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getTour, getTourRates, parseIncludes } from "@/lib/queries/tours";
 import { saveTour } from "../actions";
 import { ImageUploadField } from "@/components/ImageUploadField";
+import { ProductImageManager } from "@/components/ProductImageManager";
 
 // saveTour redirects here with ?error=<code> on an expected mistake or ?saved=1
 // on success, instead of throwing an error production would redact. (Audit A14.)
@@ -132,6 +133,10 @@ export default async function TourEditPage({
           </button>
         </div>
       </form>
+
+      {/* Outside the save form -- each photo row is its own form, and HTML
+          forbids nested forms. (F4 / #8.) */}
+      <ProductImageManager ownerType="tour" ownerId={id} />
     </div>
   );
 }
