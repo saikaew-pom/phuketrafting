@@ -14,9 +14,10 @@ import {
   recordEmailNotification,
   recordWhatsAppNotification,
   type BookingStatus,
+  type BookingDetail,
 } from "@/lib/queries/bookings";
 import { logBookingEvent, createTourBooking } from "@/lib/booking";
-import { sendBookingReceivedEmail } from "@/lib/brevo";
+import { sendBookingReceivedEmail, sendBookingStatusEmail, sendBookingStaffNotice } from "@/lib/brevo";
 
 const VALID_STATUSES: readonly BookingStatus[] = ["pending", "confirmed", "completed", "cancelled", "no_show"];
 
@@ -31,19 +32,120 @@ export async function changeBookingStatus(bookingId: string, formData: FormData)
     throw new Error(`Invalid status: ${status}`);
   }
 
-  // Reject a nonexistent bookingId here, with a clear message, instead of
-  // letting a silent 0-row UPDATE fall through to logBookingEvent below and
-  // crash on booking_logs' FK constraint (confirmed live: that produced an
-  // opaque "FOREIGN KEY constraint failed" 500 with no indication of the
-  // real cause).
+  // Fetched BEFORE the update, for two reasons: updateBookingStatus only
+  // returns a changed/not-changed boolean, not the row, so this is where the
+  // PREVIOUS status comes from (needed below to tell a genuine transition
+  // apart from staff re-saving the status the booking is already at -- a
+  // no-op save must not re-fire the confirm/cancel emails), and it's the same
+  // existence check the old code got from the update's changes-count, just
+  // moved earlier so a nonexistent bookingId fails with a clear message
+  // before doing anything rather than after.
+  const booking = await getBookingDetail(bookingId);
+  if (!booking) {
+    throw new Error(`Booking not found: ${bookingId}`);
+  }
+  const previousStatus = booking.status;
+
   const updated = await updateBookingStatus(bookingId, status as BookingStatus);
   if (!updated) {
     throw new Error(`Booking not found: ${bookingId}`);
   }
   await logBookingEvent(bookingId, staff.email, "status_changed", { status });
 
+  // Guest + staff notifications on an actual move to Confirmed or Cancelled.
+  // This is squarely inside plan §2's "all guest notifications are explicit
+  // staff button-clicks" rule -- nothing here fires except as the direct
+  // consequence of a staff member choosing this status. Scoped to exactly
+  // confirmed/cancelled (not completed/no_show, which nobody asked for) and
+  // only on a real transition, so re-saving an unchanged status is silent.
+  if ((status === "confirmed" || status === "cancelled") && previousStatus !== status) {
+    await sendStatusChangeNotifications(booking, status);
+  }
+
   revalidatePath(`/dashboard/bookings/${bookingId}`);
   revalidatePath("/dashboard/bookings");
+}
+
+/**
+ * Fires both halves of a status-change notification -- the guest-facing
+ * Confirmed/Cancelled email and the staff-facing heads-up -- independently
+ * try/caught so a failure on one side never suppresses or blocks the other,
+ * and never blocks the status change itself, which has already committed by
+ * the time this runs. Mirrors booking-ack.ts's sendBookingAck exactly, same
+ * reasoning: a Brevo outage must degrade to "no email", never to "the status
+ * change looks like it failed" or "staff/guest silently hear nothing".
+ */
+async function sendStatusChangeNotifications(booking: BookingDetail, status: "confirmed" | "cancelled"): Promise<void> {
+  if (!booking.guest_email) {
+    // Phone/walk-in bookings legitimately have no email -- same as
+    // notifyGuestEmail's existing handling. Logged so "why didn't the guest
+    // hear anything" has an answer on the Activity tab.
+    await safeLog(booking.id, "status_email_skipped", { status, reason: "no guest email on file" });
+  } else {
+    try {
+      const host = (await headers()).get("host");
+      const manageUrl =
+        booking.manage_token && host ? `https://${host}/${booking.locale}/manage/${booking.manage_token}` : null;
+
+      const sent = await sendBookingStatusEmail(
+        {
+          guestName: booking.guest_name,
+          guestEmail: booking.guest_email,
+          productName: booking.product_name ?? "your booking",
+          date: booking.date ?? "",
+          total: booking.total,
+          currency: booking.currency,
+          manageUrl,
+        },
+        status
+      );
+      await recordEmailNotification(booking.id, sent ? "sent" : "not_configured");
+      await safeLog(booking.id, "status_email_sent", { status, result: sent ? "sent" : "not_configured" });
+    } catch (err) {
+      // recordEmailNotification is itself a D1 write and can throw on its own
+      // (not just the sendBookingStatusEmail call that landed us in this
+      // catch) -- guarded the same way safeLog guards logBookingEvent below,
+      // so a second D1 hiccup here can't escape this function, skip the
+      // revalidatePath calls in changeBookingStatus, and surface as a 500 to
+      // staff for a status change that already committed successfully.
+      try {
+        await recordEmailNotification(booking.id, "failed");
+      } catch (recordErr) {
+        console.error("changeBookingStatus: failed to record failed email status", recordErr);
+      }
+      await safeLog(booking.id, "status_email_sent", { status, result: "failed", error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  try {
+    await sendBookingStaffNotice(
+      {
+        id: booking.id,
+        guestName: booking.guest_name,
+        productName: booking.product_name ?? "trip",
+        date: booking.date ?? "",
+        total: booking.total,
+        currency: booking.currency,
+      },
+      status
+    );
+    await safeLog(booking.id, "booking_staff_notice", { event: status, status: "sent" });
+  } catch (err) {
+    await safeLog(booking.id, "booking_staff_notice", {
+      event: status,
+      status: "failed",
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/** logBookingEvent writes to D1 too -- a hiccup there must not turn a real (and already-attempted) email send into an unhandled 500 on top of it. */
+async function safeLog(bookingId: string, action: string, details: Record<string, unknown>): Promise<void> {
+  try {
+    await logBookingEvent(bookingId, "system", action, details);
+  } catch (err) {
+    console.error("changeBookingStatus: failed to log", action, err);
+  }
 }
 
 export async function toggleCheckedIn(bookingId: string, formData: FormData) {

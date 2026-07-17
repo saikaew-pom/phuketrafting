@@ -6,7 +6,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { insertEnquiry } from "@/lib/queries/enquiries";
 import { recordConsent } from "@/lib/queries/consent";
-import { sendEnquiryNotification } from "@/lib/brevo";
+import { sendEnquiryNotification, sendEnquiryAckEmail } from "@/lib/brevo";
 import { isSupportedLocale, DEFAULT_LOCALE } from "@/lib/i18n";
 
 const EnquirySchema = z.object({
@@ -85,12 +85,20 @@ export async function submitEnquiry(_prevState: EnquiryFormState, formData: Form
       userAgent: requestHeaders.get("user-agent"),
     });
 
-    // Fail-open: the D1 insert above is the durable record of the enquiry: a
-    // Brevo outage must never turn a real lead into a user-facing error.
+    // Fail-open, and independently so: the D1 insert above is the durable
+    // record of the enquiry, so a Brevo outage on EITHER send must never turn
+    // a real lead into a user-facing error -- and a failure on one side (e.g.
+    // a typo'd guest email bouncing) must not suppress the other, since staff
+    // still need their notification even if the guest's ack didn't land.
     try {
       await sendEnquiryNotification({ name: data.name, email: data.email, phone: data.phone, message: data.message, locale });
     } catch (err) {
       console.error("Brevo enquiry notification failed", err);
+    }
+    try {
+      await sendEnquiryAckEmail({ name: data.name, email: data.email, phone: data.phone, message: data.message, locale });
+    } catch (err) {
+      console.error("Brevo enquiry ack email failed", err);
     }
 
     return { status: "success", message: "Thanks! We'll get back to you shortly." };

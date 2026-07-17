@@ -1,5 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { GOOGLE_REVIEW_URL } from "@/lib/site";
+import { GOOGLE_REVIEW_URL, BUSINESS_NAME, BUSINESS_PHONE } from "@/lib/site";
 
 const BREVO_SEND_URL = "https://api.brevo.com/v3/smtp/email";
 
@@ -23,6 +23,115 @@ export interface BrevoConfig {
 
 function resolveBrevoConfig(config?: BrevoConfig): BrevoConfig {
   return config ?? getCloudflareContext().env;
+}
+
+/**
+ * Fires one Brevo send. Every function below builds a subject + HTML body
+ * (via renderEmailLayout) and hands it here -- this is the one place that
+ * actually talks to the API, so the fetch call, headers and error handling
+ * exist exactly once.
+ */
+async function sendViaBrevo(params: {
+  apiKey: string;
+  senderEmail: string;
+  senderName: string;
+  to: { email: string; name?: string }[];
+  subject: string;
+  html: string;
+  replyTo?: { email: string; name?: string };
+}): Promise<void> {
+  const response = await fetch(BREVO_SEND_URL, {
+    method: "POST",
+    headers: { "api-key": params.apiKey, "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({
+      sender: { email: params.senderEmail, name: params.senderName },
+      to: params.to,
+      ...(params.replyTo ? { replyTo: params.replyTo } : {}),
+      subject: params.subject,
+      htmlContent: params.html,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Brevo send failed: ${response.status}`);
+  }
+}
+
+/**
+ * The shared branded shell every outgoing email renders through -- plan §4's
+ * "our own ... emails via Brevo" was built five times over as bare, unstyled
+ * `<p>` fragments with no header, no footer and nothing that identified who
+ * the email was from beyond the sender name. One layout means one place to
+ * keep the brand consistent, and it means the enquiry/staff-notification
+ * emails (nobody ever asked for those to look nice) get the same polish as
+ * the guest-facing ones for free.
+ *
+ * Table-based markup with every rule inlined, deliberately -- not because
+ * that's good CSS, but because it's the only approach that survives Outlook
+ * desktop (Word's rendering engine, no support for <style> blocks or most
+ * modern CSS) as well as Gmail's stripped-<head> clipping. A system font
+ * stack, not next/font's Sora/Plus-Jakarta-Sans: web fonts don't load in
+ * most email clients, and a family list that silently falls through to the
+ * platform default is safer than shipping a broken @font-face.
+ *
+ * `preheader` is the hidden snippet inbox lists show next to the subject
+ * line (Gmail/Outlook/Apple Mail all read it) -- without one, clients fall
+ * back to quoting the email's own first visible text, which for a
+ * template that opens on a logo is usually blank or a stray fragment.
+ */
+function renderEmailLayout(opts: { preheader: string; bodyHtml: string; audience?: "guest" | "staff" }): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phuket Rafting</title>
+</head>
+<body style="margin:0; padding:0; background:#f6f7f4; font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<div style="display:none; max-height:0; overflow:hidden; opacity:0;">${escapeHtml(opts.preheader)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7f4; padding:24px 12px;">
+<tr><td align="center">
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px; width:100%; background:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #e9ebe6;">
+<tr>
+<td style="background:#16191b; padding:22px 28px;">
+<span style="font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:20px; font-weight:800; letter-spacing:0.5px; color:#ffffff;">PHUKET</span>
+<span style="font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:20px; font-weight:800; letter-spacing:0.5px; color:#e8590c;"> RAFTING</span>
+</td>
+</tr>
+<tr>
+<td style="padding:32px 28px; font-size:15px; line-height:1.6; color:#16191b;">
+${opts.bodyHtml}
+</td>
+</tr>
+<tr>
+<td style="padding:20px 28px; background:#f6f7f4; border-top:1px solid #e9ebe6; font-size:12px; line-height:1.6; color:#79838a;">
+<p style="margin:0 0 4px;"><strong style="color:#515b62;">${escapeHtml(BUSINESS_NAME)}</strong></p>
+<p style="margin:0 0 4px;">Le Rafting, Phang Nga, Thailand &middot; <a href="tel:${escapeHtml(BUSINESS_PHONE)}" style="color:#79838a; text-decoration:underline;">${escapeHtml(BUSINESS_PHONE)}</a></p>
+${opts.audience === "staff" ? "" : `<p style="margin:0;">You're receiving this because you contacted us or made a booking with ${escapeHtml(BUSINESS_NAME)}.</p>`}
+</td>
+</tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+}
+
+/** A labelled key/value block for booking details -- reused by every guest-facing booking email so the layout is identical regardless of which one fired. */
+function emailDetailCard(rows: [label: string, value: string][]): string {
+  const cells = rows
+    .map(
+      ([label, value]) => `<tr>
+<td style="padding:6px 0; font-size:13px; color:#79838a; white-space:nowrap; vertical-align:top;">${escapeHtml(label)}</td>
+<td style="padding:6px 0 6px 16px; font-size:14px; color:#16191b; font-weight:600;">${value}</td>
+</tr>`
+    )
+    .join("");
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7f4; border-radius:8px; padding:16px 18px; margin:16px 0;">${cells}</table>`;
+}
+
+/** A pill-style button, styled like the site's .pr-btn-accent -- used for the one primary call to action a booking email offers (manage/view link). */
+function emailButton(href: string, label: string): string {
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0 4px;"><tr><td style="border-radius:999px; background:#e8590c;"><a href="${escapeHtml(href)}" style="display:inline-block; padding:12px 24px; font-size:14px; font-weight:700; color:#ffffff; text-decoration:none; border-radius:999px;">${escapeHtml(label)}</a></td></tr></table>`;
 }
 
 interface EnquiryNotification {
@@ -55,34 +164,64 @@ export async function sendEnquiryNotification(enquiry: EnquiryNotification, conf
     return;
   }
 
-  const html = `
-    <p><strong>New enquiry from the website</strong></p>
-    <p><strong>Name:</strong> ${escapeHtml(enquiry.name)}<br/>
-       <strong>Email:</strong> ${escapeHtml(enquiry.email)}<br/>
-       <strong>Phone:</strong> ${escapeHtml(enquiry.phone || "-")}<br/>
-       <strong>Locale:</strong> ${escapeHtml(enquiry.locale)}</p>
-    <p><strong>Message:</strong><br/>${escapeHtml(enquiry.message).replace(/\n/g, "<br/>")}</p>
+  const bodyHtml = `
+    <p style="margin:0 0 8px; font-size:17px; font-weight:700;">New enquiry from the website</p>
+    ${emailDetailCard([
+      ["Name", escapeHtml(enquiry.name)],
+      ["Email", escapeHtml(enquiry.email)],
+      ["Phone", escapeHtml(enquiry.phone || "--")],
+      ["Locale", escapeHtml(enquiry.locale)],
+    ])}
+    <p style="margin:16px 0 4px; font-size:13px; color:#79838a;">Message</p>
+    <p style="margin:0; white-space:pre-wrap;">${escapeHtml(enquiry.message)}</p>
   `;
 
-  const response = await fetch(BREVO_SEND_URL, {
-    method: "POST",
-    headers: {
-      "api-key": apiKey,
-      "content-type": "application/json",
-      accept: "application/json",
-    },
-    body: JSON.stringify({
-      sender: { email: senderEmail, name: "Phuket Rafting Website" },
-      to: [{ email: notifyEmail }],
-      replyTo: { email: enquiry.email, name: enquiry.name },
-      subject: `New enquiry from ${enquiry.name}`,
-      htmlContent: html,
-    }),
+  await sendViaBrevo({
+    apiKey,
+    senderEmail,
+    senderName: "Phuket Rafting Website",
+    to: [{ email: notifyEmail }],
+    replyTo: { email: enquiry.email, name: enquiry.name },
+    subject: `New enquiry from ${enquiry.name}`,
+    html: renderEmailLayout({ preheader: `${enquiry.name}: ${enquiry.message.slice(0, 100)}`, bodyHtml, audience: "staff" }),
   });
+}
 
-  if (!response.ok) {
-    throw new Error(`Brevo send failed: ${response.status}`);
-  }
+/**
+ * Sent TO the guest the moment they submit "Send us a message" -- the missing
+ * half of the enquiry flow. sendEnquiryNotification above tells the business
+ * a lead came in; until this existed, the guest side of that same exchange
+ * got nothing but the on-page "Thanks!" text, which vanishes the moment they
+ * close the tab. Nothing here promises a reply time beyond what the guest
+ * was already told on the page, so there's no commitment this can break.
+ *
+ * Fail-open, same as sendEnquiryNotification and for the identical reason:
+ * the enquiries row is already durably in D1 by the time this is called, so
+ * a Brevo outage must degrade to "the guest doesn't get a receipt email",
+ * never to "the enquiry looks like it failed".
+ */
+export async function sendEnquiryAckEmail(enquiry: EnquiryNotification, config?: BrevoConfig): Promise<void> {
+  const env = resolveBrevoConfig(config);
+  const apiKey = env.BREVO_API_KEY;
+  const senderEmail = env.BREVO_SENDER_EMAIL;
+  if (!apiKey || !senderEmail) return;
+
+  const bodyHtml = `
+    <p>Hi ${escapeHtml(enquiry.name)},</p>
+    <p>Thanks for reaching out -- we've got your message and someone from our team will reply shortly.</p>
+    <p style="margin:16px 0 4px; font-size:13px; color:#79838a;">What you sent us</p>
+    <p style="margin:0; white-space:pre-wrap; color:#515b62;">${escapeHtml(enquiry.message)}</p>
+    <p style="margin-top:20px;">Need us sooner? Message us on WhatsApp and we'll pick it up directly.</p>
+  `;
+
+  await sendViaBrevo({
+    apiKey,
+    senderEmail,
+    senderName: "Phuket Rafting",
+    to: [{ email: enquiry.email, name: enquiry.name }],
+    subject: "We've got your message",
+    html: renderEmailLayout({ preheader: "Thanks for reaching out -- we'll reply shortly.", bodyHtml }),
+  });
 }
 
 export interface BookingReceivedEmail {
@@ -104,23 +243,27 @@ export interface BookingReceivedEmail {
 }
 
 /**
- * Sent TO the guest by staff clicking "Notify guest" on a booking (plan §2:
- * "email says 'Booking Received' never 'Confirmed'; all guest notifications
- * are explicit staff button-clicks"). Unlike sendEnquiryNotification, this
- * is NOT fail-open at this layer -- it throws on a real send failure so the
- * caller (dashboard/bookings/actions.ts's notifyGuestEmail) can record
- * last_email_status='failed' and let staff see and retry, instead of a
- * silently-swallowed failure looking like a successful send.
+ * "Booking Received" -- says Received, never Confirmed (plan §2). Two
+ * callers: automatically the moment a booking is created (lib/booking-ack.ts,
+ * both tour and camp paths) and again whenever staff click "Notify guest" on
+ * the booking detail page (dashboard/bookings/actions.ts's notifyGuestEmail)
+ * -- the button re-sends the same receipt, it doesn't change what it says.
+ * Neither caller lets this assert a confirmation; that's sendBookingStatusEmail's
+ * job, fired only when staff actually move the booking to Confirmed.
+ *
+ * NOT fail-open at this layer -- throws on a real send failure so each
+ * caller can record its own outcome (booking-ack.ts's booking_ack_email log,
+ * notifyGuestEmail's last_email_status) rather than a silently-swallowed
+ * failure looking like a successful send.
  *
  * No-ops if BREVO_API_KEY/BREVO_SENDER_EMAIL aren't configured -- same
  * "let the rest of the flow work before business addresses exist" reasoning
  * as sendEnquiryNotification -- but unlike that fire-and-forget background
- * effect, this one's caller needs to tell a no-op apart from a real send:
+ * effect, this one's callers need to tell a no-op apart from a real send:
  * returns false for "not configured, nothing was sent" vs true for "Brevo
- * actually accepted it", so notifyGuestEmail can record
- * last_email_status='not_configured' instead of the misleading 'sent'.
- * (Confirmed live: before this return value existed, a misconfigured Brevo
- * made every send look like a genuine success in the dashboard/audit log.)
+ * actually accepted it". (Confirmed live: before this return value existed,
+ * a misconfigured Brevo made every send look like a genuine success in the
+ * dashboard/audit log.)
  */
 export async function sendBookingReceivedEmail(booking: BookingReceivedEmail, config?: BrevoConfig): Promise<boolean> {
   const env = resolveBrevoConfig(config);
@@ -131,37 +274,146 @@ export async function sendBookingReceivedEmail(booking: BookingReceivedEmail, co
     return false;
   }
 
-  const totalFormatted = `฿${booking.total.toLocaleString("en-US")}`;
-  const html = `
+  const bodyHtml = `
     <p>Hi ${escapeHtml(booking.guestName)},</p>
     <p>We've received your booking request -- <strong>this confirms we have it, not that it's fully confirmed yet</strong>.
        Our team will be in touch with pickup details shortly.</p>
-    <p><strong>Booking:</strong> ${escapeHtml(booking.productName)}<br/>
-       <strong>Date:</strong> ${escapeHtml(booking.date)}<br/>
-       <strong>Total:</strong> ${totalFormatted} ${escapeHtml(booking.currency)}</p>
-    ${booking.manageUrl ? `<p><a href="${escapeHtml(booking.manageUrl)}">View or manage your booking</a></p>` : ""}
-    <p>Questions? Just reply to this email or message us on WhatsApp.</p>
+    ${emailDetailCard([
+      ["Booking", escapeHtml(booking.productName)],
+      ["Date", escapeHtml(booking.date)],
+      ["Total", `${formatTHB(booking.total)} ${escapeHtml(booking.currency)}`],
+    ])}
+    ${booking.manageUrl ? emailButton(booking.manageUrl, "View or manage your booking") : ""}
+    <p style="margin-top:20px;">Questions? Just reply to this email or message us on WhatsApp.</p>
   `;
 
-  const response = await fetch(BREVO_SEND_URL, {
-    method: "POST",
-    headers: {
-      "api-key": apiKey,
-      "content-type": "application/json",
-      accept: "application/json",
-    },
-    body: JSON.stringify({
-      sender: { email: senderEmail, name: "Phuket Rafting" },
-      to: [{ email: booking.guestEmail, name: booking.guestName }],
-      subject: `Booking received -- ${booking.productName}`,
-      htmlContent: html,
+  await sendViaBrevo({
+    apiKey,
+    senderEmail,
+    senderName: "Phuket Rafting",
+    to: [{ email: booking.guestEmail, name: booking.guestName }],
+    subject: `Booking received -- ${booking.productName}`,
+    html: renderEmailLayout({ preheader: `We've got your request for ${booking.productName} -- next, our team confirms it.`, bodyHtml }),
+  });
+  return true;
+}
+
+/**
+ * Guest-facing "Confirmed" / "Cancelled" email, fired only when staff
+ * actually change a booking's status to one of those two (dashboard/bookings
+ * /actions.ts's changeBookingStatus) -- never automatically, never from a
+ * guest action. That's the load-bearing distinction plan §2 draws between
+ * this and sendBookingReceivedEmail: Received is a receipt for something the
+ * guest just did, this is the business asserting something is actually true,
+ * so nothing sends it except the human decision it describes.
+ *
+ * Same not-fail-open contract as sendBookingReceivedEmail and for the same
+ * reason -- the caller records last_email_status, so a swallowed failure
+ * would misreport as a successful send.
+ *
+ * The cancelled copy deliberately does not state a refund amount or
+ * eligibility: refunds are a separate staff action (refundBooking) that may
+ * or may not follow a cancellation, and asserting one here could promise
+ * money that was never actually returned.
+ */
+export async function sendBookingStatusEmail(
+  booking: BookingReceivedEmail,
+  status: "confirmed" | "cancelled",
+  config?: BrevoConfig
+): Promise<boolean> {
+  const env = resolveBrevoConfig(config);
+  const apiKey = env.BREVO_API_KEY;
+  const senderEmail = env.BREVO_SENDER_EMAIL;
+  if (!apiKey || !senderEmail) return false;
+
+  const detailCard = emailDetailCard([
+    ["Booking", escapeHtml(booking.productName)],
+    ["Date", escapeHtml(booking.date)],
+    ["Total", `${formatTHB(booking.total)} ${escapeHtml(booking.currency)}`],
+  ]);
+
+  const bodyHtml =
+    status === "confirmed"
+      ? `
+    <p>Hi ${escapeHtml(booking.guestName)},</p>
+    <p><strong style="color:#0a7d4d;">Your booking is confirmed.</strong> We'll see you on the day -- pickup details
+       will follow separately if you booked a transfer.</p>
+    ${detailCard}
+    ${booking.manageUrl ? emailButton(booking.manageUrl, "View your booking") : ""}
+    <p style="margin-top:20px;">Questions before then? Just reply to this email or message us on WhatsApp.</p>
+  `
+      : `
+    <p>Hi ${escapeHtml(booking.guestName)},</p>
+    <p><strong style="color:#c2410c;">This booking has been cancelled.</strong></p>
+    ${detailCard}
+    <p>If a payment is due back to you, our team will follow up separately about the refund, per our cancellation
+       policy. If this wasn't you or you think it's a mistake, reply to this email right away.</p>
+  `;
+
+  await sendViaBrevo({
+    apiKey,
+    senderEmail,
+    senderName: "Phuket Rafting",
+    to: [{ email: booking.guestEmail, name: booking.guestName }],
+    subject: status === "confirmed" ? `Booking confirmed -- ${booking.productName}` : `Booking cancelled -- ${booking.productName}`,
+    html: renderEmailLayout({
+      preheader:
+        status === "confirmed"
+          ? `You're confirmed for ${booking.productName} on ${booking.date}.`
+          : `Your booking for ${booking.productName} has been cancelled.`,
+      bodyHtml,
     }),
   });
-
-  if (!response.ok) {
-    throw new Error(`Brevo send failed: ${response.status}`);
-  }
   return true;
+}
+
+/**
+ * Short internal copy to the business inbox whenever a booking is created or
+ * its status moves to Confirmed/Cancelled -- the "stakeholders" side of those
+ * three events, mirroring sendEnquiryNotification's guest/business split for
+ * enquiries. Before this existed, a new booking was invisible to staff unless
+ * someone happened to open the dashboard; this makes it land in the same
+ * inbox the enquiry notifications already do.
+ *
+ * Deliberately terse (no full detail card) -- this is a heads-up with a link
+ * into the dashboard, not the record of truth. The booking row and
+ * booking_logs are that; this just makes sure a human notices promptly.
+ *
+ * Fail-open, same as sendEnquiryNotification: never lets an internal FYI
+ * email block or complicate a booking flow or a staff status change that has
+ * already succeeded.
+ */
+export async function sendBookingStaffNotice(
+  booking: { id: string; guestName: string; productName: string; date: string; total: number; currency: string },
+  event: "new" | "confirmed" | "cancelled",
+  config?: BrevoConfig
+): Promise<void> {
+  const env = resolveBrevoConfig(config);
+  const apiKey = env.BREVO_API_KEY;
+  const senderEmail = env.BREVO_SENDER_EMAIL;
+  const notifyEmail = env.BREVO_NOTIFY_EMAIL;
+  if (!apiKey || !senderEmail || !notifyEmail) return;
+
+  const label = event === "new" ? "New booking" : event === "confirmed" ? "Booking confirmed" : "Booking cancelled";
+  const bodyHtml = `
+    <p style="margin:0 0 8px; font-size:17px; font-weight:700;">${label}</p>
+    ${emailDetailCard([
+      ["Guest", escapeHtml(booking.guestName)],
+      ["Booking", escapeHtml(booking.productName)],
+      ["Date", escapeHtml(booking.date)],
+      ["Total", `${formatTHB(booking.total)} ${escapeHtml(booking.currency)}`],
+    ])}
+    <p style="margin:16px 0 0; font-size:13px; color:#79838a;">Booking ref: ${escapeHtml(booking.id)}</p>
+  `;
+
+  await sendViaBrevo({
+    apiKey,
+    senderEmail,
+    senderName: "Phuket Rafting Website",
+    to: [{ email: notifyEmail }],
+    subject: `${label} -- ${booking.guestName} (${booking.productName})`,
+    html: renderEmailLayout({ preheader: `${booking.guestName} -- ${booking.productName}, ${booking.date}`, bodyHtml, audience: "staff" }),
+  });
 }
 
 interface ManageRequestNotification {
@@ -193,32 +445,24 @@ export async function sendManageRequestNotification(req: ManageRequestNotificati
   }
 
   const label = req.requestType === "cancel" ? "Cancellation" : "Reschedule";
-  const html = `
-    <p><strong>${label} request from a guest</strong></p>
-    <p><strong>Booking:</strong> ${escapeHtml(req.productName)} (#${escapeHtml(req.bookingId)})<br/>
-       <strong>Guest:</strong> ${escapeHtml(req.guestName)}</p>
-    ${req.message ? `<p><strong>Message:</strong><br/>${escapeHtml(req.message).replace(/\n/g, "<br/>")}</p>` : ""}
-    <p>Review in the dashboard: /dashboard/bookings/${escapeHtml(req.bookingId)}</p>
+  const bodyHtml = `
+    <p style="margin:0 0 8px; font-size:17px; font-weight:700;">${label} request from a guest</p>
+    ${emailDetailCard([
+      ["Booking", `${escapeHtml(req.productName)} (#${escapeHtml(req.bookingId)})`],
+      ["Guest", escapeHtml(req.guestName)],
+    ])}
+    ${req.message ? `<p style="margin:16px 0 4px; font-size:13px; color:#79838a;">Message</p><p style="margin:0; white-space:pre-wrap;">${escapeHtml(req.message)}</p>` : ""}
+    <p style="margin:16px 0 0; font-size:13px; color:#79838a;">Review in the dashboard: /dashboard/bookings/${escapeHtml(req.bookingId)}</p>
   `;
 
-  const response = await fetch(BREVO_SEND_URL, {
-    method: "POST",
-    headers: {
-      "api-key": apiKey,
-      "content-type": "application/json",
-      accept: "application/json",
-    },
-    body: JSON.stringify({
-      sender: { email: senderEmail, name: "Phuket Rafting Website" },
-      to: [{ email: notifyEmail }],
-      subject: `${label} request -- ${req.guestName} (${req.productName})`,
-      htmlContent: html,
-    }),
+  await sendViaBrevo({
+    apiKey,
+    senderEmail,
+    senderName: "Phuket Rafting Website",
+    to: [{ email: notifyEmail }],
+    subject: `${label} request -- ${req.guestName} (${req.productName})`,
+    html: renderEmailLayout({ preheader: `${req.guestName} asked to ${req.requestType} ${req.productName}`, bodyHtml, audience: "staff" }),
   });
-
-  if (!response.ok) {
-    throw new Error(`Brevo send failed: ${response.status}`);
-  }
 }
 
 interface ScheduledGuestEmail {
@@ -259,38 +503,37 @@ export async function sendPreArrivalEmail(booking: ScheduledGuestEmail, config?:
   // Pickup details are the whole point of this email, so be explicit when
   // there AREN'T any -- a guest who chose "no pickup" reading a reminder that
   // silently omits any mention of it could easily assume a van is coming.
+  const pickupRows: [string, string][] = [
+    [
+      "Pickup",
+      `${escapeHtml(booking.pickupZoneName ?? "")}${booking.pickupEarliestTime ? ` from around ${escapeHtml(booking.pickupEarliestTime)}` : ""}`,
+    ],
+  ];
+  if (booking.hotel) pickupRows.push(["Hotel", escapeHtml(booking.hotel)]);
   const pickupBlock = booking.pickupZoneName
-    ? `<p><strong>Pickup:</strong> ${escapeHtml(booking.pickupZoneName)}${
-        booking.pickupEarliestTime ? ` from around ${escapeHtml(booking.pickupEarliestTime)}` : ""
-      }${booking.hotel ? `<br/><strong>Hotel:</strong> ${escapeHtml(booking.hotel)}` : ""}</p>
+    ? `${emailDetailCard(pickupRows)}
        <p>Please be ready in your hotel lobby 10 minutes before that time. We'll call if there's any delay.</p>`
     : `<p><strong>No pickup booked</strong> -- you're making your own way to us. Need a transfer after all? Just reply to this email or message us on WhatsApp.</p>`;
 
-  const html = `
+  const bodyHtml = `
     <p>Hi ${escapeHtml(booking.guestName)},</p>
     <p>See you tomorrow! Here are your details for <strong>${escapeHtml(booking.productName)}</strong> on
        ${escapeHtml(booking.date)}${booking.startTime ? ` at ${escapeHtml(booking.startTime)}` : ""}.</p>
     ${pickupBlock}
     <p>Bring: swimwear, a change of clothes, sunscreen and a towel. We provide all safety gear, and there are
        hot showers and lockers at the base.</p>
-    ${booking.manageUrl ? `<p><a href="${escapeHtml(booking.manageUrl)}">View your booking or sign your waivers</a></p>` : ""}
-    <p>Any questions, just reply to this email or message us on WhatsApp.</p>
+    ${booking.manageUrl ? emailButton(booking.manageUrl, "View your booking or sign your waivers") : ""}
+    <p style="margin-top:20px;">Any questions, just reply to this email or message us on WhatsApp.</p>
   `;
 
-  const response = await fetch(BREVO_SEND_URL, {
-    method: "POST",
-    headers: { "api-key": apiKey, "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({
-      sender: { email: senderEmail, name: "Phuket Rafting" },
-      to: [{ email: booking.guestEmail, name: booking.guestName }],
-      subject: `See you tomorrow -- ${booking.productName}`,
-      htmlContent: html,
-    }),
+  await sendViaBrevo({
+    apiKey,
+    senderEmail,
+    senderName: "Phuket Rafting",
+    to: [{ email: booking.guestEmail, name: booking.guestName }],
+    subject: `See you tomorrow -- ${booking.productName}`,
+    html: renderEmailLayout({ preheader: `Tomorrow: ${booking.productName} on ${booking.date}. Here's what to know.`, bodyHtml }),
   });
-
-  if (!response.ok) {
-    throw new Error(`Brevo send failed: ${response.status}`);
-  }
   return true;
 }
 
@@ -306,31 +549,29 @@ export async function sendThankYouEmail(booking: ScheduledGuestEmail, config?: B
   const senderEmail = env.BREVO_SENDER_EMAIL;
   if (!apiKey || !senderEmail) return false;
 
-  const html = `
+  const bodyHtml = `
     <p>Hi ${escapeHtml(booking.guestName)},</p>
     <p>Thanks for joining us for <strong>${escapeHtml(booking.productName)}</strong> -- we hope the river treated
        you well.</p>
     <p>If you enjoyed it, a quick review genuinely helps a small local operator like us:</p>
-    <p><a href="${escapeHtml(GOOGLE_REVIEW_URL)}">Leave us a review</a></p>
-    <p>And if anything wasn't right, please reply to this email and tell us directly -- we'd rather hear it from
-       you than not at all.</p>
+    ${emailButton(GOOGLE_REVIEW_URL, "Leave us a review")}
+    <p style="margin-top:20px;">And if anything wasn't right, please reply to this email and tell us directly --
+       we'd rather hear it from you than not at all.</p>
   `;
 
-  const response = await fetch(BREVO_SEND_URL, {
-    method: "POST",
-    headers: { "api-key": apiKey, "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({
-      sender: { email: senderEmail, name: "Phuket Rafting" },
-      to: [{ email: booking.guestEmail, name: booking.guestName }],
-      subject: `Thanks for rafting with us, ${booking.guestName}!`,
-      htmlContent: html,
-    }),
+  await sendViaBrevo({
+    apiKey,
+    senderEmail,
+    senderName: "Phuket Rafting",
+    to: [{ email: booking.guestEmail, name: booking.guestName }],
+    subject: `Thanks for rafting with us, ${booking.guestName}!`,
+    html: renderEmailLayout({ preheader: `Thanks for joining us for ${booking.productName} -- we hope you had a great time.`, bodyHtml }),
   });
-
-  if (!response.ok) {
-    throw new Error(`Brevo send failed: ${response.status}`);
-  }
   return true;
+}
+
+function formatTHB(amount: number): string {
+  return `฿${amount.toLocaleString("en-US")}`;
 }
 
 function escapeHtml(value: string): string {

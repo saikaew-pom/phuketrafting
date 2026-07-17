@@ -1,4 +1,4 @@
-import { sendBookingReceivedEmail } from "@/lib/brevo";
+import { sendBookingReceivedEmail, sendBookingStaffNotice } from "@/lib/brevo";
 import { logBookingEvent } from "@/lib/booking";
 import { getBookingDetail } from "@/lib/queries/bookings";
 
@@ -31,40 +31,82 @@ import { getBookingDetail } from "@/lib/queries/bookings";
  *
  * The outcome lands on booking_logs either way, so "I never got an email" has
  * an answer from the audit trail rather than a shrug.
+ *
+ * Also fires the staff "New booking" notice (sendBookingStaffNotice) --
+ * before this, a new booking was invisible to staff unless someone happened
+ * to open the dashboard. The two sends are independently try/caught: a
+ * guest-email failure must not suppress the staff notice (staff still need
+ * to know a booking landed, especially since a guest with no email on file
+ * is exactly the case where nothing else will tell them), and vice versa.
  */
 export async function sendBookingAck(bookingId: string, host: string | null): Promise<void> {
+  // Wrapped, unlike the two sends below: getBookingDetail is a D1 read with
+  // no try/catch of its own, and a transient D1 failure here must not escape
+  // this function -- callers (booking-actions.ts, camp-booking-actions.ts)
+  // await this un-caught on the strength of the "NEVER THROWS" contract above,
+  // inside a try/catch that would otherwise turn an already-successful
+  // booking (seat already claimed) into a guest-facing "something went
+  // wrong", inviting a duplicate booking for a seat that's already theirs.
+  let booking: Awaited<ReturnType<typeof getBookingDetail>>;
   try {
-    const booking = await getBookingDetail(bookingId);
-    if (!booking) {
-      await safeLog(bookingId, "booking_ack_email", { status: "failed", error: "booking not found" });
-      return;
-    }
-
-    // Phone/walk-in bookings legitimately have no email. Logged rather than
-    // silently skipped, so "why did this guest get nothing?" has an answer.
-    if (!booking.guest_email) {
-      await safeLog(bookingId, "booking_ack_skipped", { reason: "no guest email on file" });
-      return;
-    }
-
-    const manageUrl =
-      booking.manage_token && host ? `https://${host}/${booking.locale}/manage/${booking.manage_token}` : null;
-
-    const sent = await sendBookingReceivedEmail({
-      guestName: booking.guest_name,
-      guestEmail: booking.guest_email,
-      productName: booking.product_name ?? "your trip",
-      date: booking.date ?? "",
-      total: booking.total,
-      currency: booking.currency,
-      manageUrl,
-    });
-    // sendBookingReceivedEmail returns false for "Brevo not configured" and
-    // true for "Brevo accepted it". Recording those differently matters:
-    // 'not_configured' is an ops problem, 'sent' is not.
-    await safeLog(bookingId, "booking_ack_email", { status: sent ? "sent" : "not_configured" });
+    booking = await getBookingDetail(bookingId);
   } catch (err) {
     await safeLog(bookingId, "booking_ack_email", {
+      status: "failed",
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return;
+  }
+  if (!booking) {
+    await safeLog(bookingId, "booking_ack_email", { status: "failed", error: "booking not found" });
+    return;
+  }
+
+  // Phone/walk-in bookings legitimately have no email. Logged rather than
+  // silently skipped, so "why did this guest get nothing?" has an answer.
+  if (!booking.guest_email) {
+    await safeLog(bookingId, "booking_ack_skipped", { reason: "no guest email on file" });
+  } else {
+    try {
+      const manageUrl =
+        booking.manage_token && host ? `https://${host}/${booking.locale}/manage/${booking.manage_token}` : null;
+
+      const sent = await sendBookingReceivedEmail({
+        guestName: booking.guest_name,
+        guestEmail: booking.guest_email,
+        productName: booking.product_name ?? "your trip",
+        date: booking.date ?? "",
+        total: booking.total,
+        currency: booking.currency,
+        manageUrl,
+      });
+      // sendBookingReceivedEmail returns false for "Brevo not configured" and
+      // true for "Brevo accepted it". Recording those differently matters:
+      // 'not_configured' is an ops problem, 'sent' is not.
+      await safeLog(bookingId, "booking_ack_email", { status: sent ? "sent" : "not_configured" });
+    } catch (err) {
+      await safeLog(bookingId, "booking_ack_email", {
+        status: "failed",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  try {
+    await sendBookingStaffNotice(
+      {
+        id: booking.id,
+        guestName: booking.guest_name,
+        productName: booking.product_name ?? "trip",
+        date: booking.date ?? "",
+        total: booking.total,
+        currency: booking.currency,
+      },
+      "new"
+    );
+    await safeLog(bookingId, "booking_staff_notice", { status: "sent" });
+  } catch (err) {
+    await safeLog(bookingId, "booking_staff_notice", {
       status: "failed",
       error: err instanceof Error ? err.message : String(err),
     });
