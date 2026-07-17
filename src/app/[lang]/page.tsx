@@ -6,7 +6,7 @@ import { listPickupZones } from "@/lib/queries/pickup";
 import { listImages } from "@/lib/queries/images";
 import { listActiveFaqs } from "@/lib/queries/faqs";
 import { listActiveAddons } from "@/lib/queries/addons";
-import { getSiteStats } from "@/lib/queries/settings";
+import { getSiteStats, getHero } from "@/lib/queries/settings";
 import { GALLERY } from "@/lib/content";
 import { SITE_URL, BUSINESS_NAME } from "@/lib/site";
 import { SUPPORTED_LOCALES, DEFAULT_LOCALE } from "@/lib/i18n";
@@ -89,6 +89,7 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
     listImages("gallery", null),
   ]);
   const siteStats = await getSiteStats();
+  const hero = await getHero();
   const faqRows = await listActiveFaqs();
   // Priced add-ons (migration 0018), shown as tick-boxes in both booking
   // widgets. The widget sends only the ticked ids; price/name are re-resolved
@@ -186,7 +187,7 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
       {jsonLd.map((entry, i) => (
         <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(entry) }} />
       ))}
-      <Hero tours={bookingTours} pickupZones={pickupZones} addons={bookingAddons} locale={lang} stats={siteStats} />
+      <Hero tours={bookingTours} pickupZones={pickupZones} addons={bookingAddons} locale={lang} stats={siteStats} hero={hero} />
       <TrustBar stats={siteStats} />
       <Tours tours={tourCards} camping={camping} />
       {activeCampZones.length > 0 && <CampBookingSection zones={activeCampZones} addons={bookingAddons} locale={lang} />}

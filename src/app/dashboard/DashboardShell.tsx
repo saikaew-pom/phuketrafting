@@ -19,6 +19,7 @@ import {
   Package,
   Ticket,
   Inbox,
+  LayoutTemplate,
   Palette,
   Settings,
   LogOut,
@@ -58,6 +59,7 @@ const NAV = [
   { href: "/dashboard/blog", label: "Blog", icon: Newspaper },
   // Rendering is gated on role below, but that's UX, not security -- the
   // settings page and its action both requireAdmin() server-side.
+  { href: "/dashboard/homepage", label: "Homepage", icon: LayoutTemplate, adminOnly: true },
   { href: "/dashboard/appearance", label: "Appearance", icon: Palette, adminOnly: true },
   { href: "/dashboard/settings", label: "Settings", icon: Settings, adminOnly: true },
 ];

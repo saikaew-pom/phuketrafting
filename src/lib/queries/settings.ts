@@ -423,6 +423,70 @@ export async function writeLogo(logo: Logo, updatedBy: string): Promise<void> {
 }
 
 /**
+ * Editable hero (homepage CMS, hero stage). Every field defaults to today's
+ * hardcoded copy, so an absent/malformed row renders the site exactly as it
+ * did before this became editable. headingEmphasis is a substring of heading
+ * that renders in the accent-italic style (the "unforgettable" word today) --
+ * kept as plain text staff type, not markup, so there's nothing to escape.
+ */
+export interface HeroContent {
+  heading: string;
+  /** A phrase within `heading` to highlight; "" or not-found = no highlight. */
+  headingEmphasis: string;
+  subheading: string;
+  /** Cloudinary public_id of the hero background. */
+  backgroundImageId: string;
+  primaryCtaLabel: string;
+  secondaryCtaLabel: string;
+  trustOne: string;
+  trustTwo: string;
+  trustThree: string;
+}
+
+export const DEFAULT_HERO: HeroContent = {
+  heading: "Swap a lazy beach day for an unforgettable rush.",
+  headingEmphasis: "unforgettable",
+  subheading:
+    "White-water rafting, ziplines and ATV adventures through the wild heart of Phang Nga -- run by the pros who've done it safely for 20+ years.",
+  backgroundImageId: "au7evtgufphh8vmfyaor",
+  primaryCtaLabel: "Book your adventure",
+  secondaryCtaLabel: "See all packages",
+  trustOne: "Certified guides",
+  trustTwo: "Hot showers",
+  trustThree: "Free cancellation",
+};
+
+const HERO_KEY = "hero";
+
+export async function getHero(dbOverride?: D1Database): Promise<HeroContent> {
+  const raw = await readSetting(HERO_KEY, dbOverride);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return DEFAULT_HERO;
+  const v = raw as Record<string, unknown>;
+  // Each field independently defaulted, same stance as getSiteStats. Emphasis
+  // is the one field allowed to be empty ("" = no highlight), so it's read
+  // straight rather than defaulted-on-blank.
+  const str = (key: keyof HeroContent): string => {
+    const value = v[key];
+    return typeof value === "string" && value.trim() !== "" ? value : DEFAULT_HERO[key];
+  };
+  return {
+    heading: str("heading"),
+    headingEmphasis: typeof v.headingEmphasis === "string" ? v.headingEmphasis : DEFAULT_HERO.headingEmphasis,
+    subheading: str("subheading"),
+    backgroundImageId: str("backgroundImageId"),
+    primaryCtaLabel: str("primaryCtaLabel"),
+    secondaryCtaLabel: str("secondaryCtaLabel"),
+    trustOne: str("trustOne"),
+    trustTwo: str("trustTwo"),
+    trustThree: str("trustThree"),
+  };
+}
+
+export async function writeHero(hero: HeroContent, updatedBy: string): Promise<void> {
+  await getDb().prepare(UPSERT_SETTING).bind(HERO_KEY, JSON.stringify(hero), updatedBy).run();
+}
+
+/**
  * Theme + logo as ONE transaction -- the Appearance screen saves them together,
  * and a half-applied save (new colour, old logo, or vice versa) is a visibly
  * broken brand. Same batched-as-one-transaction reasoning as writePolicies.
