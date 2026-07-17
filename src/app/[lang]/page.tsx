@@ -4,6 +4,7 @@ import { listCampZones, getMinCampRate } from "@/lib/queries/camping";
 import { listPublishedReviews, listTourReviewStats } from "@/lib/queries/reviews";
 import { listPickupZones } from "@/lib/queries/pickup";
 import { listImages } from "@/lib/queries/images";
+import { listActiveFaqs } from "@/lib/queries/faqs";
 import { getSiteStats } from "@/lib/queries/settings";
 import { GALLERY } from "@/lib/content";
 import { SITE_URL, BUSINESS_NAME } from "@/lib/site";
@@ -87,6 +88,10 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
     listImages("gallery", null),
   ]);
   const siteStats = await getSiteStats();
+  const faqRows = await listActiveFaqs();
+  // Dashboard-managed FAQ, shared by the visible accordion AND the FAQPage
+  // JSON-LD so they can't drift. (F4-style CMS; seeded from the old constant.)
+  const faqItems = faqRows.map((f) => ({ q: f.question, a: f.answer }));
 
   // Dashboard-managed gallery, falling back to the hardcoded launch set while
   // the gallery table is empty -- so the section is never blank and staff can
@@ -157,7 +162,13 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
 
   const stickyFromPrice = Math.min(...tourCards.map((t) => t.fromPrice).filter((p) => p > 0), minCampRate ?? Infinity);
 
-  const jsonLd = [buildOrganizationJsonLd(), ...buildProductsJsonLd(tourCards, lang), buildFaqJsonLd()];
+  const jsonLd = [
+    buildOrganizationJsonLd(),
+    ...buildProductsJsonLd(tourCards, lang),
+    // Skip FAQ markup entirely if staff have hidden them all -- an empty
+    // FAQPage is invalid structured data.
+    ...(faqItems.length > 0 ? [buildFaqJsonLd(faqItems)] : []),
+  ];
 
   return (
     <>
@@ -172,7 +183,7 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
       <WhyUs stats={siteStats} />
       <Reviews reviews={reviewCards} stats={siteStats} />
       <Gallery items={galleryItems} />
-      <FAQ />
+      <FAQ items={faqItems} />
       <EnquirySection locale={lang} />
       <FinalCTA />
       <StickyBar fromPrice={Number.isFinite(stickyFromPrice) ? stickyFromPrice : 0} stats={siteStats} />

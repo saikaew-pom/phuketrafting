@@ -2,19 +2,26 @@
 
 import { useState } from "react";
 import { Plus, Minus } from "lucide-react";
-import { FAQS } from "@/lib/content";
 import { waLink } from "@/lib/whatsapp";
 import { SectionHead } from "@/components/public/SectionHead";
 
-export function FAQ() {
+export interface FaqItem {
+  q: string;
+  a: string;
+}
+
+// items come from D1 (dashboard-managed) via the landing page. (F4-style CMS.)
+export function FAQ({ items }: { items: FaqItem[] }) {
   const [open, setOpen] = useState(0);
+
+  if (items.length === 0) return null;
 
   return (
     <section className="pr-section pr-section-tint" id="faq">
       <div className="pr-wrap pr-wrap-narrow">
         <SectionHead center eyebrow="Good to know" title="Questions, answered" />
         <div className="pr-faq">
-          {FAQS.map((f, i) => (
+          {items.map((f, i) => (
             <div className={"pr-faq-item" + (open === i ? " pr-faq-open" : "")} key={f.q}>
               {/* aria-expanded/controls so a screen reader announces the
                   accordion state and links the button to its panel. (Audit A28.) */}

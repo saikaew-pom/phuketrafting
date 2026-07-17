@@ -14,6 +14,7 @@ import {
   Newspaper,
   Star,
   Images,
+  HelpCircle,
   MapPin,
   Inbox,
   Settings,
@@ -48,6 +49,7 @@ const NAV = [
   { href: "/dashboard/pickup", label: "Pickup zones", icon: MapPin },
   { href: "/dashboard/reviews", label: "Reviews", icon: Star },
   { href: "/dashboard/gallery", label: "Gallery", icon: Images },
+  { href: "/dashboard/faqs", label: "FAQ", icon: HelpCircle },
   { href: "/dashboard/blog", label: "Blog", icon: Newspaper },
   // Rendering is gated on role below, but that's UX, not security -- the
   // settings page and its action both requireAdmin() server-side.
