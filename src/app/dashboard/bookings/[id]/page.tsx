@@ -110,9 +110,15 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
                 the value that was just saved, even though the write itself succeeded.
                 Confirmed live: the server-sent RSC payload already carried the correct new
                 defaultValue, but the mounted DOM node ignored it without this key. */}
+            {/* Once a booking is cancelled its seat has been released, so
+                reopening it here is disabled -- changeBookingStatus refuses the
+                transition server-side (a reopen without re-claiming would
+                silently overbook), and staff re-add a guest with a new booking.
+                Disabling the options keeps that refusal out of a normal staff
+                member's way. (Audit A1.) */}
             <select name="status" defaultValue={booking.status} key={booking.status} style={{ width: "auto" }}>
               {STATUSES.map((s) => (
-                <option key={s} value={s}>
+                <option key={s} value={s} disabled={booking.status === "cancelled" && s !== "cancelled"}>
                   {STATUS_LABEL[s]}
                 </option>
               ))}
@@ -120,6 +126,11 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
             <button type="submit" className="pr-dash-btn pr-dash-btn-sm">
               Update status
             </button>
+            {booking.status === "cancelled" && (
+              <span className="pr-dash-field-hint">
+                Cancelled &mdash; its seat was released. Create a new booking to re-add the guest.
+              </span>
+            )}
           </form>
 
           <form action={toggleCheckedInWithId} className="pr-dash-actions">

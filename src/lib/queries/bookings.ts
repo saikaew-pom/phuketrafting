@@ -199,10 +199,19 @@ export async function updateBookingNotes(id: string, notes: string): Promise<boo
  * Stripe payment back to a D1 row for staff reconciling by hand; the webhook
  * (5c) uses the session's own client_reference_id.
  */
-export async function recordCheckoutSession(id: string, sessionId: string): Promise<boolean> {
+export async function recordCheckoutSession(
+  id: string,
+  sessionId: string,
+  paymentExpiresAt: number
+): Promise<boolean> {
+  // Stores the session id AND the frozen payment deadline together -- the
+  // sweeper releases the seat on payment_expires_at, which must be set from the
+  // same instant Stripe's expires_at is. (Audit A3.)
   const result = await getDb()
-    .prepare("UPDATE bookings SET stripe_checkout_session_id = ?1, updated_at = unixepoch() WHERE id = ?2")
-    .bind(sessionId, id)
+    .prepare(
+      "UPDATE bookings SET stripe_checkout_session_id = ?1, payment_expires_at = ?2, updated_at = unixepoch() WHERE id = ?3"
+    )
+    .bind(sessionId, paymentExpiresAt, id)
     .run();
   return result.meta.changes > 0;
 }
@@ -302,6 +311,51 @@ export async function releaseUnpaidBooking(id: string, dbOverride?: D1Database):
         `UPDATE bookings SET status = 'cancelled', payment_status = 'failed', updated_at = unixepoch()
           WHERE id = ?1 AND ${UNPAID_GUARD}`
       )
+      .bind(id),
+  ]);
+  return cancelResult.meta.changes > 0;
+}
+
+/**
+ * Staff-cancel path: cancels a booking AND, for a tour booking, releases its
+ * held seat -- as ONE db.batch(), same atomicity and statement-ordering
+ * reasoning as releaseUnpaidBooking (capacity release reads the still-active
+ * booking through its own EXISTS guard, so it must run before the row flips to
+ * cancelled). Unlike releaseUnpaidBooking (which frees only an unpaid, still-
+ * pending hold via UNPAID_GUARD), this fires for ANY non-cancelled booking
+ * regardless of payment_status: a paid, confirmed booking being cancelled must
+ * give its seat back too. That gap -- staff cancelling never decremented
+ * booked_count -- is why cancelled tour departures showed full forever. (Audit A1.)
+ *
+ * Guarded to non-cancelled statuses so a re-cancel, or cancelling a booking the
+ * sweeper already released, can't decrement the counter twice. payment_status
+ * is deliberately left alone -- cancelling says nothing about the money (a
+ * refund is a separate staff action); contrast releaseUnpaidBooking, which sets
+ * 'failed' because there the payment genuinely never happened.
+ *
+ * Camp bookings hold no counter (availability is derived from active overlaps),
+ * so `tour_session_id IS NOT NULL` makes the release a no-op for them --
+ * cancelling the row IS the release. Returns whether the booking was cancelled.
+ */
+export async function cancelBookingReleasingSeat(id: string): Promise<boolean> {
+  const db = getDb();
+  const ACTIVE_GUARD = "status IN ('pending','confirmed','completed','no_show')";
+  const [, cancelResult] = await db.batch([
+    db
+      .prepare(
+        `UPDATE tour_sessions
+            SET booked_count = booked_count - (SELECT b.adults + b.children FROM bookings b WHERE b.id = ?1),
+                updated_at = unixepoch()
+          WHERE id = (SELECT b.tour_session_id FROM bookings b WHERE b.id = ?1)
+            AND EXISTS (
+              SELECT 1 FROM bookings b
+               WHERE b.id = ?1 AND b.tour_session_id IS NOT NULL AND ${ACTIVE_GUARD}
+            )
+            AND booked_count - (SELECT b.adults + b.children FROM bookings b WHERE b.id = ?1) >= 0`
+      )
+      .bind(id),
+    db
+      .prepare(`UPDATE bookings SET status = 'cancelled', updated_at = unixepoch() WHERE id = ?1 AND ${ACTIVE_GUARD}`)
       .bind(id),
   ]);
   return cancelResult.meta.changes > 0;
@@ -500,14 +554,18 @@ export async function listExpiredUnpaidBookings(
   dbOverride?: D1Database
 ): Promise<ExpiredBookingRow[]> {
   // See releaseUnpaidBooking on why db is overridable.
+  // Sweeps on the per-booking payment_expires_at (frozen from Stripe's own
+  // expires_at at session creation), not on created_at + a re-read hold. A row
+  // without payment_expires_at (no deposit, or created before migration 0015)
+  // is never swept here -- the webhook is the release path for those. (Audit A3.)
   const { results } = await (dbOverride ?? getDb())
     .prepare(
       `SELECT id, guest_name, created_at
          FROM bookings
         WHERE ${UNPAID_GUARD}
-          AND stripe_checkout_session_id IS NOT NULL
-          AND created_at < ?1
-        ORDER BY created_at`
+          AND payment_expires_at IS NOT NULL
+          AND payment_expires_at < ?1
+        ORDER BY payment_expires_at`
     )
     .bind(cutoffUnix)
     .all<ExpiredBookingRow>();

@@ -8,6 +8,7 @@ import { requireStaff, requireAdmin } from "@/lib/access";
 import { createRefund } from "@/lib/payments";
 import {
   updateBookingStatus,
+  cancelBookingReleasingSeat,
   updateCheckedIn,
   updateBookingNotes,
   getBookingDetail,
@@ -46,7 +47,26 @@ export async function changeBookingStatus(bookingId: string, formData: FormData)
   }
   const previousStatus = booking.status;
 
-  const updated = await updateBookingStatus(bookingId, status as BookingStatus);
+  // Reopening a cancelled booking is refused. Cancelling released its tour
+  // seat (cancelBookingReleasingSeat below); flipping the status back without
+  // re-claiming would leave the booking active but UNCOUNTED, silently
+  // overbooking the departure -- and a correct re-claim needs a capacity check
+  // this plain status form can't surface. Staff re-add a guest with a new
+  // booking, which claims a seat properly. The status <select> disables these
+  // options for a cancelled booking, so this throw is only reachable by a
+  // direct POST -- an edge/abuse path where a redacted digest is acceptable.
+  // (Audit A1 / A16.)
+  if (previousStatus === "cancelled" && status !== "cancelled") {
+    throw new Error("This booking was cancelled and its seat released. Create a new booking to re-add the guest.");
+  }
+
+  // Cancelling a tour booking must give its seat back -- one transaction, so a
+  // Worker eviction can't cancel the row while leaving booked_count counting
+  // it. (Audit A1.) Every other transition is a plain status flip.
+  const updated =
+    status === "cancelled" && previousStatus !== "cancelled"
+      ? await cancelBookingReleasingSeat(bookingId)
+      : await updateBookingStatus(bookingId, status as BookingStatus);
   if (!updated) {
     throw new Error(`Booking not found: ${bookingId}`);
   }

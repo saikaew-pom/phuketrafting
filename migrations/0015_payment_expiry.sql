@@ -1,0 +1,22 @@
+-- Migration number: 0015 	 2026-07-17T00:00:00.000Z
+
+-- Per-booking payment deadline for the expiry sweeper (Audit A3).
+--
+-- The sweeper computed its cutoff from the CURRENT holdMinutes setting
+-- (settings.payment_policy), assuming it always matched the hold each Stripe
+-- session was actually created with. That assumption breaks the moment an
+-- admin edits the hold in Settings: sessions created at, say, a 2h hold, then
+-- the hold lowered to 30min, get swept ~30min in while their Stripe payment
+-- pages are still live and payable -- the guest pays, markBookingPaid finds a
+-- non-awaiting_payment row and silently no-ops, and they have paid for nothing.
+--
+-- Fix: freeze the deadline on the row when the Checkout session is created,
+-- from the SAME expires_at Stripe itself will enforce, and sweep on this column
+-- instead of a re-read policy. The two can no longer drift because the value is
+-- captured once and never recomputed.
+--
+-- Nullable: bookings with no deposit (no Stripe session) and any row created
+-- before this migration have none, and the sweeper only releases rows where it
+-- IS set. The checkout.session.expired webhook remains the primary, prompt
+-- release path for everything; this backstop just stops being early.
+ALTER TABLE bookings ADD COLUMN payment_expires_at INTEGER;

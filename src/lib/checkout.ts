@@ -78,7 +78,7 @@ export async function openCheckoutForBooking(result: CreateBookingResult): Promi
     // Best-effort: the session exists at Stripe regardless, and the webhook
     // resolves the booking via client_reference_id, not this column. Losing
     // it costs staff a manual lookup, not the payment.
-    const recorded = await recordCheckoutSession(bookingId, session.id);
+    const recorded = await recordCheckoutSession(bookingId, session.id, session.expiresAt);
     if (!recorded) {
       console.error(`checkout: booking ${bookingId} vanished before session id could be stored`);
     }

@@ -152,6 +152,14 @@ export interface CheckoutSessionInput {
 export interface CheckoutSessionResult {
   id: string;
   url: string;
+  /**
+   * The absolute unix second at which Stripe will expire this session -- the
+   * exact value we set in `expires_at` below and Stripe echoes back. Persisted
+   * on the booking (payment_expires_at) so the expiry sweeper releases the seat
+   * on THIS frozen deadline rather than a re-read policy that can drift when
+   * staff change the hold. (Audit A3.)
+   */
+  expiresAt: number;
 }
 
 /**
@@ -233,7 +241,11 @@ export async function createCheckoutSession(
   if (!session.url) {
     throw new Error(`Stripe returned a session with no url (id=${session.id})`);
   }
-  return { id: session.id, url: session.url };
+  // session.expires_at is the value we set above, echoed by Stripe -- the
+  // instant it will actually expire the session. Documented as non-null for a
+  // created session; fall back to our own computation defensively. (Audit A3.)
+  const expiresAt = session.expires_at ?? Math.floor(Date.now() / 1000) + input.holdMinutes * 60;
+  return { id: session.id, url: session.url, expiresAt };
 }
 
 export interface RefundInput {
