@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useRef } from "react";
 import Script from "next/script";
 import { Send } from "lucide-react";
 import { submitEnquiry, type EnquiryFormState } from "@/app/[lang]/enquiry-actions";
@@ -25,6 +25,7 @@ const INITIAL_STATE: EnquiryFormState = { status: "idle" };
 
 export function EnquiryForm({ locale }: { locale: string }) {
   const [state, formAction, pending] = useActionState(submitEnquiry, INITIAL_STATE);
+  const statusRef = useRef<HTMLParagraphElement>(null);
 
   // Turnstile tokens are single-use. Any rejected submission (a bad Zod
   // field, an expired/already-consumed token) leaves the stale, now-spent
@@ -37,6 +38,21 @@ export function EnquiryForm({ locale }: { locale: string }) {
     }
   }, [state]);
 
+  // On success the form (5 fields + Turnstile widget + button) unmounts,
+  // collapsing several hundred pixels of height. This section sits well down
+  // the landing page, so that collapse pulls everything below it up past a
+  // guest's current scroll position -- the confirmation renders, but above
+  // the viewport, and looks like the submission vanished. Same pattern as
+  // BookingWidget.tsx's hash-jump scroll. Only on success: an error leaves
+  // the form (and this message, which renders above it) in place, so scroll
+  // position is already correct and jumping would just yank focus away from
+  // the field the guest is about to fix.
+  useEffect(() => {
+    if (state.status === "success") {
+      statusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [state]);
+
   return (
     <div className="pr-enquiry">
       {TURNSTILE_SITE_KEY && (
@@ -44,7 +60,10 @@ export function EnquiryForm({ locale }: { locale: string }) {
       )}
 
       {state.status !== "idle" && (
-        <p className={"pr-enquiry-status " + (state.status === "success" ? "pr-enquiry-status-success" : "pr-enquiry-status-error")}>
+        <p
+          ref={statusRef}
+          className={"pr-enquiry-status " + (state.status === "success" ? "pr-enquiry-status-success" : "pr-enquiry-status-error")}
+        >
           {state.message}
         </p>
       )}
