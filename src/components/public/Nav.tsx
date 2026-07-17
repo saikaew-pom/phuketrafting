@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { MessageCircle, Menu, X } from "lucide-react";
 import { waLink } from "@/lib/whatsapp";
+import { cloudinaryUrl } from "@/lib/cloudinary";
+import type { Logo } from "@/lib/queries/settings";
 
 // The sections these anchor to only exist on the landing page. On any other
 // page under [lang] (blog, manage, privacy...) a bare "#tours" points at
@@ -19,7 +21,7 @@ const LINKS = [
   { hash: "#faq", label: "FAQ" },
 ];
 
-export function Nav({ locale }: { locale: string }) {
+export function Nav({ locale, logo }: { locale: string; logo: Logo }) {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -38,9 +40,17 @@ export function Nav({ locale }: { locale: string }) {
     <header className={"pr-nav" + (scrolled ? " pr-nav-scrolled" : "")}>
       <div className="pr-nav-inner">
         <a href={hrefFor("#top")} className="pr-brand">
-          <span className="pr-brand-name">
-            PHUKET <span>RAFTING</span>
-          </span>
+          {logo.imageId ? (
+            // eslint-disable-next-line @next/next/no-img-element -- logo aspect
+            // ratio is unknown (admin upload); a plain <img> sized by CSS height
+            // avoids next/image's required width/height. Cloudinary negotiates
+            // format/quality via cloudinaryUrl.
+            <img className="pr-brand-logo" src={cloudinaryUrl(logo.imageId, 240)} alt={`${logo.wordOne} ${logo.wordTwo}`} />
+          ) : (
+            <span className="pr-brand-name">
+              {logo.wordOne} <span>{logo.wordTwo}</span>
+            </span>
+          )}
         </a>
         <nav className="pr-nav-links">
           {LINKS.map((l) => (

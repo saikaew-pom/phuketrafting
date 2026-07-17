@@ -352,3 +352,85 @@ export async function getSiteStats(dbOverride?: D1Database): Promise<SiteStats> 
 export async function writeSiteStats(stats: SiteStats, updatedBy: string): Promise<void> {
   await getDb().prepare(UPSERT_SETTING).bind(SITE_STATS_KEY, JSON.stringify(stats), updatedBy).run();
 }
+
+/**
+ * Site theme (homepage CMS, appearance stage). Just the ONE brand colour --
+ * the darker hover shade and the pale tint derive from it in lib/theme.ts, so
+ * staff can't pick three colours that clash. A malformed/absent row falls back
+ * to the original #e8590c, so a bad edit re-skins to today's look, never a 500.
+ */
+export interface Theme {
+  /** Brand accent, #rrggbb. Feeds --accent (+ derived --accent-dark/-soft). */
+  brandColor: string;
+}
+
+export const DEFAULT_THEME: Theme = { brandColor: "#e8590c" };
+
+const THEME_KEY = "theme";
+const HEX6_RE = /^#[0-9a-fA-F]{6}$/;
+
+export async function getTheme(dbOverride?: D1Database): Promise<Theme> {
+  const raw = await readSetting(THEME_KEY, dbOverride);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return DEFAULT_THEME;
+  const v = raw as Record<string, unknown>;
+  // Only a real 6-digit hex is honoured -- anything else (a colour name, a
+  // 3-digit hex, junk) reverts to the default rather than emitting an invalid
+  // CSS value that would blank the accent everywhere.
+  const brandColor =
+    typeof v.brandColor === "string" && HEX6_RE.test(v.brandColor.trim())
+      ? v.brandColor.trim().toLowerCase()
+      : DEFAULT_THEME.brandColor;
+  return { brandColor };
+}
+
+export async function writeTheme(theme: Theme, updatedBy: string): Promise<void> {
+  await getDb().prepare(UPSERT_SETTING).bind(THEME_KEY, JSON.stringify(theme), updatedBy).run();
+}
+
+/**
+ * Site logo (homepage CMS, appearance stage). Either an uploaded image
+ * (Cloudflare Images id) OR the two-word wordmark; the renderer shows the
+ * image when imageId is set, else the words. Defaults reproduce today's
+ * "PHUKET RAFTING" wordmark, so an empty/bad row looks unchanged.
+ */
+export interface Logo {
+  /** Cloudinary public_id of an uploaded logo, or null to use the wordmark. */
+  imageId: string | null;
+  wordOne: string;
+  wordTwo: string;
+}
+
+export const DEFAULT_LOGO: Logo = { imageId: null, wordOne: "PHUKET", wordTwo: "RAFTING" };
+
+const LOGO_KEY = "logo";
+
+export async function getLogo(dbOverride?: D1Database): Promise<Logo> {
+  const raw = await readSetting(LOGO_KEY, dbOverride);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return DEFAULT_LOGO;
+  const v = raw as Record<string, unknown>;
+  const imageId = typeof v.imageId === "string" && v.imageId.trim() !== "" ? v.imageId.trim() : null;
+  // Each word independently defaulted, same stance as getSiteStats: a blank
+  // word falls back rather than rendering an empty wordmark.
+  const word = (key: "wordOne" | "wordTwo"): string => {
+    const value = v[key];
+    return typeof value === "string" && value.trim() !== "" ? value.trim() : DEFAULT_LOGO[key];
+  };
+  return { imageId, wordOne: word("wordOne"), wordTwo: word("wordTwo") };
+}
+
+export async function writeLogo(logo: Logo, updatedBy: string): Promise<void> {
+  await getDb().prepare(UPSERT_SETTING).bind(LOGO_KEY, JSON.stringify(logo), updatedBy).run();
+}
+
+/**
+ * Theme + logo as ONE transaction -- the Appearance screen saves them together,
+ * and a half-applied save (new colour, old logo, or vice versa) is a visibly
+ * broken brand. Same batched-as-one-transaction reasoning as writePolicies.
+ */
+export async function writeAppearance(theme: Theme, logo: Logo, updatedBy: string): Promise<void> {
+  const db = getDb();
+  await db.batch([
+    db.prepare(UPSERT_SETTING).bind(THEME_KEY, JSON.stringify(theme), updatedBy),
+    db.prepare(UPSERT_SETTING).bind(LOGO_KEY, JSON.stringify(logo), updatedBy),
+  ]);
+}

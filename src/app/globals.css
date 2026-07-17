@@ -2240,6 +2240,85 @@ select.pr-input {
   padding: 28px 32px 64px;
   min-width: 0; /* tables must scroll inside the grid column, not widen it */
 }
+
+/* ---- Appearance screen (homepage CMS) ---- */
+.pr-appear-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.pr-appear-swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid var(--line-2);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.pr-appear-swatch:hover {
+  transform: scale(1.08);
+}
+.pr-appear-swatch-on {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--ink);
+}
+.pr-appear-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.pr-appear-custom input[type="color"] {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+.pr-appear-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.pr-appear-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+.pr-appear-chip-soft {
+  color: var(--ink);
+}
+.pr-appear-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+}
+.pr-appear-logo-preview {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: var(--ink);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 20px;
+  color: #fff;
+  letter-spacing: 0.02em;
+}
 .pr-dash-topbar {
   display: none;
 }

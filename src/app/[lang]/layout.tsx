@@ -5,7 +5,8 @@ import { Nav } from "@/components/public/Nav";
 import { Footer } from "@/components/public/Footer";
 import { ConsentBanner } from "@/components/public/ConsentBanner";
 import { ChatWidget } from "@/components/public/ChatWidget";
-import { getChatPolicy } from "@/lib/queries/settings";
+import { getChatPolicy, getTheme, getLogo } from "@/lib/queries/settings";
+import { deriveThemeVars } from "@/lib/theme";
 import { Analytics } from "@/components/public/Analytics";
 
 const sora = Sora({
@@ -38,14 +39,23 @@ export default async function LangLayout({
   const { lang } = await params;
   if (!isSupportedLocale(lang)) notFound();
 
-  const chat = await getChatPolicy();
+  const [chat, theme, logo] = await Promise.all([getChatPolicy(), getTheme(), getLogo()]);
+  // One admin-chosen brand colour, expanded to the three accent tokens and
+  // emitted as a <style> that overrides the :root defaults for everything
+  // inside .pr-app. Server-rendered, so there's no flash of the old colour.
+  const vars = deriveThemeVars(theme.brandColor);
 
   return (
     <div className={`pr-app ${sora.variable} ${plusJakartaSans.variable}`}>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `.pr-app{--accent:${vars.accent};--accent-dark:${vars.accentDark};--accent-soft:${vars.accentSoft};}`,
+        }}
+      />
       <Analytics />
-      <Nav locale={lang} />
+      <Nav locale={lang} logo={logo} />
       {children}
-      <Footer locale={lang} />
+      <Footer locale={lang} logo={logo} />
       <ConsentBanner locale={lang} />
       {/* Server-side gate: staff turning the chatbot off must ship NO widget,
           not a launcher that fails on click. Plan §9's master toggle. */}

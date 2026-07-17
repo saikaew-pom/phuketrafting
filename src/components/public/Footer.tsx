@@ -2,9 +2,10 @@ import Link from "next/link";
 import { MessageCircle, MapPin, Clock } from "lucide-react";
 import { waLink } from "@/lib/whatsapp";
 import { listTours } from "@/lib/queries/tours";
-import { getSiteStats } from "@/lib/queries/settings";
+import { getSiteStats, type Logo } from "@/lib/queries/settings";
+import { cloudinaryUrl } from "@/lib/cloudinary";
 
-export async function Footer({ locale }: { locale: string }) {
+export async function Footer({ locale, logo }: { locale: string; logo: Logo }) {
   const stats = await getSiteStats();
   const tours = await listTours();
 
@@ -12,9 +13,14 @@ export async function Footer({ locale }: { locale: string }) {
     <footer className="pr-footer">
       <div className="pr-wrap pr-footer-inner">
         <div className="pr-footer-brand">
-          <span className="pr-brand-name pr-brand-name-light">
-            PHUKET <span>RAFTING</span>
-          </span>
+          {logo.imageId ? (
+            // eslint-disable-next-line @next/next/no-img-element -- see Nav.tsx.
+            <img className="pr-brand-logo" src={cloudinaryUrl(logo.imageId, 240)} alt={`${logo.wordOne} ${logo.wordTwo}`} />
+          ) : (
+            <span className="pr-brand-name pr-brand-name-light">
+              {logo.wordOne} <span>{logo.wordTwo}</span>
+            </span>
+          )}
           <p>Phang Nga&apos;s most experienced white-water rafting, zipline &amp; ATV operator since 2002.</p>
           <a
             className="pr-btn pr-btn-accent"
