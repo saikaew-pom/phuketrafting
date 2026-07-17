@@ -54,7 +54,30 @@ async function handleCheckoutCompleted(session: StripeCheckoutSession): Promise<
     // Not an error: a duplicate delivery, or staff/refund already moved it on.
     // The claim in stripe_events should stop most of these, but a DIFFERENT
     // event id can still describe an already-paid booking.
-    return `booking ${bookingId} not in awaiting_payment (payment_status=${booking.payment_status}) -- no change`;
+    //
+    // But if the booking was CANCELLED/failed (the sweeper released it, or
+    // staff cancelled) and real money just arrived, that's the "paid for
+    // nothing" case (Audit A9): the only durable trace used to be this console
+    // line, and refundBooking can't even act on it (it requires payment_status
+    // = 'paid'). Record it on the booking's own activity log -- where staff
+    // actually look -- so it can't go unnoticed, and shout in the logs.
+    const concerning = booking.payment_status !== "paid";
+    if (concerning) {
+      await logBookingEvent(bookingId, "stripe", "payment_received_after_release", {
+        session_id: session.id,
+        amount_total: session.amount_total,
+        currency: session.currency,
+        booking_status: booking.status,
+        payment_status: booking.payment_status,
+      });
+      console.error(
+        `stripe webhook: payment received on non-awaiting booking ${bookingId} ` +
+          `(status=${booking.status}, payment_status=${booking.payment_status}) -- money may need refunding`
+      );
+    }
+    return `booking ${bookingId} not in awaiting_payment (payment_status=${booking.payment_status}) -- no change${
+      concerning ? " (payment_received_after_release logged)" : ""
+    }`;
   }
 
   await logBookingEvent(bookingId, "stripe", "payment_received", {

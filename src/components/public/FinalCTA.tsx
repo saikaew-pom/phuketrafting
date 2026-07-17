@@ -16,7 +16,7 @@ export function FinalCTA() {
           <MapPin size={14} className="pr-ico" /> Phang Nga, Thailand
         </span>
         <h2>Your jungle adventure is one message away.</h2>
-        <p>Reserve your date free, pay on the day, and let the pros handle the rest. Let&apos;s go wild.</p>
+        <p>Reserve your date with a small deposit, pay the balance on the day, and let the pros handle the rest. Let&apos;s go wild.</p>
         <div className="pr-finalcta-actions">
           {/* The booking form, not a chat. This is the page's closing CTA --
               "Reserve your spot" opening WhatsApp meant the last thing a

@@ -69,9 +69,20 @@ export async function getChatSpend(now: Date = new Date()): Promise<ChatSpend> {
  *
  * Order matters:
  *   1. increment if the row already holds TODAY (the hot path),
- *   2. else reset it to today (a stale row from a previous day),
+ *   2. else reset it to today (a stale row from a previous day, OR a corrupt
+ *      one -- see below),
  *   3. else insert (first ever call).
  * Each is guarded so exactly one applies, whichever raced.
+ *
+ * Every json_extract is wrapped in `CASE WHEN json_valid(value) THEN ... END`
+ * -- deliberately, and load-bearing: a hand-edited/corrupt row makes a bare
+ * json_extract in a WHERE clause THROW ("malformed JSON"), not return NULL, so
+ * without this the increment statement errors, the reset never runs, the row
+ * is never repaired, and the daily cap is dead until a human fixes the row.
+ * (getChatSpend already reads a corrupt row as 0, so the cap silently stops
+ * biting.) With the CASE guard, a corrupt row simply fails the increment's
+ * date match and falls through to the reset, which overwrites it with a valid
+ * json_object -- repairing it. (Audit A15.)
  */
 export async function addChatTokens(tokens: number, now: Date = new Date()): Promise<void> {
   const db = getDb();
@@ -82,17 +93,21 @@ export async function addChatTokens(tokens: number, now: Date = new Date()): Pro
       `UPDATE settings
           SET value = json_set(value, '$.tokens', json_extract(value, '$.tokens') + ?1),
               updated_at = unixepoch()
-        WHERE key = ?2 AND json_extract(value, '$.date') = ?3`
+        WHERE key = ?2
+          AND (CASE WHEN json_valid(value) THEN json_extract(value, '$.date') END) = ?3`
     )
     .bind(tokens, SPEND_KEY, today)
     .run();
   if (bumped.meta.changes > 0) return;
 
-  // Row exists but is from another day -- overwrite with today's first spend.
+  // Row exists but is from another day OR is corrupt -- overwrite with today's
+  // first spend. The CASE ELSE (a corrupt/invalid row) evaluates to 1 (true),
+  // so this statement is what repairs a malformed row back to valid JSON.
   const reset = await db
     .prepare(
       `UPDATE settings SET value = json_object('date', ?1, 'tokens', ?2), updated_at = unixepoch()
-        WHERE key = ?3 AND json_extract(value, '$.date') != ?1`
+        WHERE key = ?3
+          AND (CASE WHEN json_valid(value) THEN json_extract(value, '$.date') != ?1 ELSE 1 END)`
     )
     .bind(today, tokens, SPEND_KEY)
     .run();

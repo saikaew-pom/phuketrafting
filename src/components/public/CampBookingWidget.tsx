@@ -164,6 +164,15 @@ export function CampBookingWidget({ zones, locale }: { zones: CampZoneOption[]; 
     }
   }, [state]);
 
+  // Pull the confirmation into view on a no-checkout success, same as
+  // BookingWidget/EnquiryForm -- the form collapses and would otherwise strand
+  // the message above the viewport. (Audit A19.)
+  useEffect(() => {
+    if (state.status === "success" && !state.checkoutUrl) {
+      statusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [state]);
+
   // Turnstile tokens are single-use -- same fix as BookingWidget.tsx. Reset
   // THIS widget by container: the landing page has three Turnstile widgets and
   // a bare reset() clears only one. (Audit A4.)
@@ -177,6 +186,7 @@ export function CampBookingWidget({ zones, locale }: { zones: CampZoneOption[]; 
   // React state -- same fix as BookingWidget.tsx, applied to all three
   // selects here.
   const turnstileRef = useRef<HTMLDivElement>(null);
+  const statusRef = useRef<HTMLParagraphElement>(null);
   const zoneSelectRef = useRef<HTMLSelectElement>(null);
   const stayTypeSelectRef = useRef<HTMLSelectElement>(null);
   const unitSelectRef = useRef<HTMLSelectElement>(null);
@@ -205,7 +215,7 @@ export function CampBookingWidget({ zones, locale }: { zones: CampZoneOption[]; 
       </div>
 
       {state.status !== "idle" && (
-        <p className={"pr-enquiry-status " + (state.status === "success" ? "pr-enquiry-status-success" : "pr-enquiry-status-error")}>
+        <p ref={statusRef} className={"pr-enquiry-status " + (state.status === "success" ? "pr-enquiry-status-success" : "pr-enquiry-status-error")}>
           {state.message}
           {state.status === "success" && state.manageToken && (
             <>

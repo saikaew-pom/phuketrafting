@@ -73,6 +73,16 @@ export function ManageBookingRequestForm({ manageToken }: { manageToken: string 
     }
   }, [state]);
 
+  // On success the form unmounts and collapses; pull the confirmation into
+  // view so it isn't stranded above the viewport. Same fix as EnquiryForm.
+  // (Audit A19.)
+  const statusRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (state.status === "success") {
+      statusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [state]);
+
   return (
     <div className="pr-enquiry">
       {TURNSTILE_SITE_KEY && (
@@ -80,7 +90,7 @@ export function ManageBookingRequestForm({ manageToken }: { manageToken: string 
       )}
 
       {state.status !== "idle" && (
-        <p className={"pr-enquiry-status " + (state.status === "success" ? "pr-enquiry-status-success" : "pr-enquiry-status-error")}>
+        <p ref={statusRef} className={"pr-enquiry-status " + (state.status === "success" ? "pr-enquiry-status-success" : "pr-enquiry-status-error")}>
           {state.message}
         </p>
       )}

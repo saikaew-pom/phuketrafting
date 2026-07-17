@@ -17,7 +17,7 @@ export function HowItWorks() {
           center
           eyebrow="Easy as it gets"
           title="Booked in four simple steps"
-          sub="No accounts, no deposits, no stress. Just message and go."
+          sub="No accounts, no hassle. A small deposit locks in your date -- pay the balance on the day."
         />
         <div className="pr-steps">
           {STEPS.map((s, i) => {

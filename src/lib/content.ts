@@ -38,6 +38,11 @@ export const WHY = [
   },
 ] as const;
 
+// NOTE: the "small deposit ... balance on the day" wording below (and in
+// HowItWorks/FinalCTA) describes the current deposit policy. It is NOT gated on
+// the configurable payment policy (settings can switch to pay_on_day / full
+// prepay). If that policy ever changes, revisit this copy so it can't
+// contradict the booking widget's dynamic payment line. (Audit A10.)
 export const STEPS = [
   {
     n: "01",
@@ -49,7 +54,7 @@ export const STEPS = [
     n: "02",
     icon: "CalendarCheck",
     title: "Book in seconds",
-    text: "Reserve your date on WhatsApp -- instant confirmation, pay on the day.",
+    text: "Reserve your date online or on WhatsApp -- a small deposit locks it in, balance on the day.",
   },
   {
     n: "03",

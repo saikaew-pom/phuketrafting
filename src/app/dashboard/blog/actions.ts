@@ -76,28 +76,55 @@ async function assertSlugAvailable(slug: string, excludePostId: string | null): 
   }
 }
 
-export async function createBlogPost(formData: FormData): Promise<void> {
+// useActionState shape. The editor's draft (title/body/excerpt) lives in
+// controlled React state, so returning an error here re-renders the form with
+// the draft intact -- unlike the previous throw, which hit the dashboard error
+// boundary and took the unsaved AI-generated draft with it, showing staff only
+// a redacted "Reference: NNNN" (a slug collision and a non-Latin title are both
+// expected, per this file's own comments). (Audit A11.)
+export interface BlogFormState {
+  error: string | null;
+  saved?: boolean;
+}
+
+// readInput and assertSlugAvailable throw plain Errors for expected input
+// problems (bad category, blank title, un-slugifiable title, slug collision).
+// Validation runs inside a try/catch so those become inline error state; the
+// mutation and redirect run OUTSIDE it, so redirect()'s internal NEXT_REDIRECT
+// throw still propagates to the framework rather than being swallowed here.
+export async function createBlogPost(_prev: BlogFormState, formData: FormData): Promise<BlogFormState> {
   const staff = await requireStaff();
-  const input = readInput(formData);
+  let input: BlogPostInput;
+  try {
+    input = readInput(formData);
+    await assertSlugAvailable(input.slug, null);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Please check the form and try again." };
+  }
   if (!input.author) input.author = staff.name;
-  await assertSlugAvailable(input.slug, null);
 
   const id = await createPost(input);
   revalidatePath("/dashboard/blog");
   redirect(`/dashboard/blog/${id}`);
 }
 
-export async function saveBlogPost(postId: string, formData: FormData): Promise<void> {
+export async function saveBlogPost(postId: string, _prev: BlogFormState, formData: FormData): Promise<BlogFormState> {
   await requireStaff();
-  const input = readInput(formData);
-  await assertSlugAvailable(input.slug, postId);
+  let input: BlogPostInput;
+  try {
+    input = readInput(formData);
+    await assertSlugAvailable(input.slug, postId);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Please check the form and try again." };
+  }
 
   const ok = await updatePost(postId, input);
   if (!ok) {
-    throw new Error("That post no longer exists.");
+    return { error: "That post no longer exists." };
   }
   revalidatePath("/dashboard/blog");
   revalidatePath(`/dashboard/blog/${postId}`);
+  return { error: null, saved: true };
 }
 
 export async function deleteBlogPost(postId: string): Promise<void> {

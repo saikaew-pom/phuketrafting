@@ -1,17 +1,20 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { ImageUploadField } from "@/components/ImageUploadField";
 import { BLOG_CATEGORIES, type BlogPost } from "@/lib/queries/blog";
-import { generateDraftAction, generateExcerptAction } from "./actions";
+import { generateDraftAction, generateExcerptAction, type BlogFormState } from "./actions";
 
 interface Props {
   post: BlogPost | null; // null = new post
-  action: (formData: FormData) => void;
+  action: (prev: BlogFormState, formData: FormData) => Promise<BlogFormState>;
   onDelete?: () => Promise<void>;
 }
 
+const INITIAL_FORM_STATE: BlogFormState = { error: null };
+
 export function BlogEditorClient({ post, action, onDelete }: Props) {
+  const [formState, formAction, saving] = useActionState(action, INITIAL_FORM_STATE);
   const [title, setTitle] = useState(post?.title ?? "");
   const [category, setCategory] = useState(post?.category ?? BLOG_CATEGORIES[0].id);
   const [content, setContent] = useState(post?.content ?? "");
@@ -55,7 +58,7 @@ export function BlogEditorClient({ post, action, onDelete }: Props) {
 
   return (
     <>
-      <form action={action} className="pr-dash-form">
+      <form action={formAction} className="pr-dash-form">
         <div className="pr-dash-card">
           <h2>Post</h2>
           <div className="pr-dash-form">
@@ -131,9 +134,16 @@ export function BlogEditorClient({ post, action, onDelete }: Props) {
           </div>
         </div>
 
+        {formState.error && <p className="pr-dash-error">{formState.error}</p>}
+        {formState.saved && (
+          <p className="pr-dash-field-hint" style={{ color: "var(--green)" }}>
+            Saved.
+          </p>
+        )}
+
         <div className="pr-dash-actions">
-          <button type="submit" className="pr-dash-btn">
-            Save
+          <button type="submit" className="pr-dash-btn" disabled={saving}>
+            {saving ? "Saving..." : "Save"}
           </button>
           {onDelete && (
             <button type="button" className="pr-dash-btn pr-dash-btn-danger" onClick={handleDeleteClick} disabled={deletePending}>

@@ -72,8 +72,9 @@
   // deploys never touch the production D1 database (plan §1 gotcha #9). Deploy with
   // `wrangler deploy --env staging`. Confirmed via `wrangler deploy --dry-run --env staging`
   // that durable_objects/r2_buckets/services are NOT inherited from top-level per named
-  // environment (d1_databases/triggers/migrations either don't need it or aren't flagged) —
-  // every non-inherited binding is redeclared below, pointed at staging-only resources.
+  // environment -- every non-inherited binding is redeclared below, pointed at
+  // staging-only resources. `triggers` IS inheritable, so it's explicitly emptied
+  // below (see the comment there). (Audit A13.)
   "env": {
     "staging": {
       // `vars` are NOT inherited by a named environment (same gotcha as
@@ -82,6 +83,14 @@
       "vars": {
         "PUBLIC_BASE_URL": "https://phuket-rafting-staging.pskspace.workers.dev"
       },
+      // Emptied deliberately: `triggers` IS an inheritable key, so without this
+      // the staging Worker would register BOTH production crons and run the
+      // expiry sweeper + guest-notification jobs against staging D1. If staging
+      // ever holds a copy of production bookings with BREVO_API_KEY set, real
+      // guests would get duplicate/wrong T-1/T+1 emails -- the *_sent_at
+      // idempotency claims are per-database and don't protect across Workers.
+      // Staging runs no scheduled jobs. (Audit A13.)
+      "triggers": { "crons": [] },
       "d1_databases": [
         {
           "binding": "DB",

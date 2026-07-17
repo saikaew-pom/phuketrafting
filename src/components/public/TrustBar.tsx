@@ -27,7 +27,7 @@ export function TrustBar({ stats }: { stats: SiteStats }) {
           <Award size={26} className="pr-ico pr-trust-badge-ico" />
           <div>
             <strong>Trusted local operator</strong>
-            <span>Phang Nga \u00b7 est. {stats.sinceYear}</span>
+            <span>Phang Nga &middot; est. {stats.sinceYear}</span>
           </div>
         </div>
       </div>

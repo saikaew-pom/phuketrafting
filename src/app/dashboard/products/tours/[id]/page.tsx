@@ -3,19 +3,49 @@ import { getTour, getTourRates, parseIncludes } from "@/lib/queries/tours";
 import { saveTour } from "../actions";
 import { ImageUploadField } from "@/components/ImageUploadField";
 
-export default async function TourEditPage({ params }: { params: Promise<{ id: string }> }) {
+// saveTour redirects here with ?error=<code> on an expected mistake or ?saved=1
+// on success, instead of throwing an error production would redact. (Audit A14.)
+const TOUR_ERROR_MESSAGES: Record<string, string> = {
+  name_required: "Name is required.",
+  min_max: "Minimum group size can't be larger than the maximum.",
+  blank_price: "Prices can't be blank -- enter 0 only if the tour really is free.",
+  invalid_number: "Please check the numbers (prices, distance, group size, sort order).",
+};
+
+export default async function TourEditPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string; saved?: string }>;
+}) {
   const { id } = await params;
+  const { error, saved } = await searchParams;
   const tour = await getTour(id);
   if (!tour) notFound();
 
   const rates = await getTourRates(id);
   const saveTourWithId = saveTour.bind(null, id);
+  const errorMessage = error ? (TOUR_ERROR_MESSAGES[error] ?? "Something went wrong saving the tour.") : null;
 
   return (
     <div>
       <div className="pr-dash-head">
         <h1>{tour.name}</h1>
       </div>
+
+      {saved && (
+        <div className="pr-dash-card" style={{ borderColor: "var(--green)", marginBottom: "16px" }}>
+          <span className="pr-dash-badge pr-dash-badge-ok">Saved</span> Tour updated.
+        </div>
+      )}
+      {errorMessage && (
+        <div className="pr-dash-card" style={{ borderColor: "var(--accent-dark)", marginBottom: "16px" }}>
+          <p className="pr-dash-error" style={{ margin: 0 }}>
+            {errorMessage}
+          </p>
+        </div>
+      )}
       <form action={saveTourWithId} className="pr-dash-form">
         <div className="pr-dash-card">
           <h2>Basics</h2>

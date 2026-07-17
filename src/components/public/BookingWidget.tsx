@@ -63,6 +63,7 @@ export function BookingWidget({
   const [sessionId, setSessionId] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const turnstileRef = useRef<HTMLDivElement>(null);
+  const statusRef = useRef<HTMLParagraphElement>(null);
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(0);
   const [infants, setInfants] = useState(0);
@@ -182,6 +183,17 @@ export function BookingWidget({
     }
   }, [state]);
 
+  // On a no-checkout success (pay-on-day, or Checkout unavailable) the whole
+  // form unmounts and is replaced by one line of confirmation -- the same
+  // collapse that stranded the enquiry form's message above the viewport. Pull
+  // it into view. Skipped when checkoutUrl is set, since that path navigates
+  // away to Stripe anyway. Same fix as EnquiryForm. (Audit A19.)
+  useEffect(() => {
+    if (state.status === "success" && !state.checkoutUrl) {
+      statusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [state]);
+
   // Turnstile tokens are single-use -- a rejected submission (bad Zod field,
   // an already-spent token) must reset the widget or every resubmission
   // attempt replays the dead token and fails forever until a page reload.
@@ -261,7 +273,7 @@ export function BookingWidget({
       </div>
 
       {state.status !== "idle" && (
-        <p className={"pr-enquiry-status " + (state.status === "success" ? "pr-enquiry-status-success" : "pr-enquiry-status-error")}>
+        <p ref={statusRef} className={"pr-enquiry-status " + (state.status === "success" ? "pr-enquiry-status-success" : "pr-enquiry-status-error")}>
           {state.message}
           {state.status === "success" && state.manageToken && (
             <>

@@ -327,14 +327,23 @@ function parseBoundedText(formData: FormData, key: string): string {
 export async function createStaffBooking(formData: FormData) {
   const staff = await requireStaff();
 
+  // Business-rule failures redirect back to the form with an ?error= code
+  // rather than throwing: this action already redirects on success, and a
+  // throw would hit the dashboard error boundary and show staff a redacted
+  // "Reference: NNNN" instead of "that session is full -- tick Allow
+  // overbook". The page renders the friendly message from the code. The most
+  // common bad inputs (blank name/counts, a blocked departure) are also
+  // blocked client-side on the form now, so this is the backstop. (Audit A12.)
+  const fail = (code: string) => redirect(`/dashboard/bookings/new?error=${code}`);
+
   const tourSessionId = String(formData.get("tour_session_id") ?? "").trim();
   const tourId = String(formData.get("tour_id") ?? "").trim();
   const guestName = parseBoundedText(formData, "guest_name");
   if (!tourSessionId || !tourId) {
-    throw new Error("Please choose a tour and date.");
+    fail("missing_selection");
   }
   if (!guestName) {
-    throw new Error("Guest name is required.");
+    fail("missing_name");
   }
 
   const adults = parseGuestCount(formData, "adults");
@@ -363,13 +372,9 @@ export async function createStaffBooking(formData: FormData) {
   });
 
   if (!result.success) {
-    const messages: Record<string, string> = {
-      not_found: "That session no longer exists -- pick another.",
-      no_capacity: 'That session is full -- check "Allow overbook" to add this guest anyway.',
-      blocked: "That session is blocked and can't be booked.",
-      invalid_input: "Please check the tour/session and guest count and try again.",
-    };
-    throw new Error(messages[result.reason ?? ""] ?? "Something went wrong creating the booking.");
+    // Codes map to friendly text on the form page (see bookings/new/page.tsx's
+    // ERROR_MESSAGES). Redirect, don't throw -- see the `fail` note above.
+    fail(result.reason ?? "unknown");
   }
 
   // createTourBooking's own internal "created" log entry always uses

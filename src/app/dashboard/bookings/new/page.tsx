@@ -15,12 +15,25 @@ function addDaysISO(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+// createStaffBooking redirects here with ?error=<code> on a business-rule
+// failure (see its `fail` helper) instead of throwing an error production
+// would redact. (Audit A12.)
+const ERROR_MESSAGES: Record<string, string> = {
+  missing_selection: "Please choose a tour and date.",
+  missing_name: "Guest name is required.",
+  not_found: "That departure no longer exists -- pick another.",
+  no_capacity: 'That departure is full -- tick "Allow overbook" to add this guest anyway.',
+  blocked: "That departure is blocked and can't be booked.",
+  invalid_input: "Please check the guest count (at least one guest) and try again.",
+};
+
 export default async function NewBookingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tourId?: string; fromDate?: string; toDate?: string }>;
+  searchParams: Promise<{ tourId?: string; fromDate?: string; toDate?: string; error?: string }>;
 }) {
   const params = await searchParams;
+  const errorMessage = params.error ? (ERROR_MESSAGES[params.error] ?? "Something went wrong creating the booking.") : null;
   const [tours, pickupZones] = await Promise.all([listTours(), listPickupZones()]);
   const activeTours = tours.filter((t) => t.is_active === 1);
 
@@ -39,6 +52,14 @@ export default async function NewBookingPage({
           &quot;Allow overbook&quot;).
         </p>
       </div>
+
+      {errorMessage && (
+        <div className="pr-dash-card" style={{ borderColor: "var(--accent-dark)", marginBottom: "16px" }}>
+          <p className="pr-dash-error" style={{ margin: 0 }}>
+            {errorMessage}
+          </p>
+        </div>
+      )}
 
       <form method="get" className="pr-dash-card" style={{ marginBottom: "16px" }}>
         <h2>Find a departure</h2>
@@ -78,8 +99,13 @@ export default async function NewBookingPage({
                 <option value="" disabled>
                   Choose a date
                 </option>
+                {/* Blocked departures are shown (so staff see the full picture)
+                    but not selectable -- createStaffBooking refuses them, and a
+                    disabled option prevents the redacted "blocked" round-trip.
+                    Full-but-open departures stay selectable: staff overbook them
+                    on purpose via the checkbox below. (Audit A12.) */}
                 {sessions.map((s) => (
-                  <option key={s.id} value={s.id}>
+                  <option key={s.id} value={s.id} disabled={s.is_blocked === 1}>
                     {s.date} -- {s.start_time} ({s.booked_count} / {s.capacity - s.allotment_hold} booked
                     {s.is_blocked ? ", BLOCKED" : ""})
                   </option>
@@ -104,17 +130,20 @@ export default async function NewBookingPage({
                 <input type="tel" name="guest_phone" maxLength={40} />
               </label>
               <div className="pr-dash-actions">
+                {/* required so a cleared field can't silently coerce to 0
+                    (Number("") is 0); the "at least one guest" sum rule stays a
+                    server check surfaced via ?error=invalid_input. (Audit A12.) */}
                 <label className="pr-dash-field" style={{ maxWidth: "110px" }}>
                   Adults
-                  <input type="number" name="adults" min={0} max={20} defaultValue={2} />
+                  <input type="number" name="adults" min={0} max={20} required defaultValue={2} />
                 </label>
                 <label className="pr-dash-field" style={{ maxWidth: "110px" }}>
                   Children
-                  <input type="number" name="children" min={0} max={20} defaultValue={0} />
+                  <input type="number" name="children" min={0} max={20} required defaultValue={0} />
                 </label>
                 <label className="pr-dash-field" style={{ maxWidth: "110px" }}>
                   Infants
-                  <input type="number" name="infants" min={0} max={20} defaultValue={0} />
+                  <input type="number" name="infants" min={0} max={20} required defaultValue={0} />
                 </label>
               </div>
             </div>
