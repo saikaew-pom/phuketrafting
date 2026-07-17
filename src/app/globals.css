@@ -2172,6 +2172,12 @@ select.pr-input {
   position: sticky;
   top: 0;
   height: 100vh;
+  /* When the nav + user chip are taller than the viewport (enough nav items
+     on a short screen), scroll INSIDE the dark column instead of letting the
+     bottom "admin" chip overflow below the dark background onto the cream page
+     -- which rendered its white text invisibly on white. Keeps the chip on the
+     dark sidebar at every viewport height. */
+  overflow-y: auto;
 }
 .pr-dash-brand {
   display: flex;

@@ -43,7 +43,7 @@ const NAV = [
   // `exact` because /dashboard/availability/camping is its own entry below --
   // without it the startsWith match in isActive() would light BOTH rows up
   // whenever the camp calendar is open.
-  { href: "/dashboard/availability", label: "Departures", icon: CalendarRange, exact: true },
+  { href: "/dashboard/availability", label: "Availability", icon: CalendarRange, exact: true },
   { href: "/dashboard/availability/camping", label: "Camp calendar", icon: TentTree },
   { href: "/dashboard/products/tours", label: "Tours", icon: Waves },
   { href: "/dashboard/products/camping", label: "Camping", icon: Tent },
