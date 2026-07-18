@@ -2412,6 +2412,54 @@ select.pr-input {
   margin-left: auto;
 }
 
+.pr-avail-bulk summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 15px;
+  font-family: var(--font-head);
+}
+.pr-avail-bulk-forms {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.pr-avail-bulk-form {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.pr-avail-bulk-title {
+  display: block;
+  font-weight: 600;
+  font-size: 13.5px;
+  margin-bottom: 8px;
+}
+.pr-avail-bulk-date {
+  max-width: 150px;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+}
+.pr-avail-audit {
+  display: flex;
+  flex-direction: column;
+}
+.pr-avail-audit-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13.5px;
+}
+.pr-avail-audit-row:first-child {
+  border-top: none;
+}
+.pr-avail-audit-action {
+  font-weight: 600;
+  min-width: 120px;
+}
+
 .pr-avail-affected {
   display: flex;
   flex-direction: column;

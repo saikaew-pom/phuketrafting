@@ -2,9 +2,19 @@ import Link from "next/link";
 import { listTours } from "@/lib/queries/tours";
 import { listTourSessionsForAdmin, type AdminTourSession } from "@/lib/scheduling";
 import { listActiveBookingsForSession, type SessionAffectedBooking } from "@/lib/queries/bookings";
-import { bangkokTodayISO, baht } from "@/lib/format";
+import { listRecentAvailabilityAudit, type AvailabilityAuditRow } from "@/lib/queries/availability-audit";
+import { bangkokTodayISO, baht, formatDateTime } from "@/lib/format";
 import { monthMeta, isValidMonth, monthOf, dayISO, longDateLabel, WEEKDAY_LABELS } from "@/lib/calendar";
-import { setSessionBlocked, setSessionCapacity, generateNow, closeSession } from "./actions";
+import {
+  setSessionBlocked,
+  setSessionCapacity,
+  generateNow,
+  closeSession,
+  bulkClose,
+  bulkReopen,
+  bulkSetCapacity,
+  undoAvailabilityAction,
+} from "./actions";
 
 // The four departure states drive the chip colour AND the legend, so they're
 // defined once. "full" folds in the sold-out and (defensive) zero-sellable
@@ -38,6 +48,9 @@ export default async function AvailabilityPage({
     cancelled?: string;
     refunded?: string;
     failed?: string;
+    bulk?: string;
+    n?: string;
+    skipped?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -70,6 +83,8 @@ export default async function AvailabilityPage({
   const closeTarget =
     selectedDay && params.close ? (byDate.get(selectedDay) ?? []).find((s) => s.id === params.close) ?? null : null;
   const affected = closeTarget ? await listActiveBookingsForSession(closeTarget.id) : [];
+
+  const recentAudit = await listRecentAvailabilityAudit(6);
 
   // Month summary.
   let closed = 0;
@@ -112,6 +127,17 @@ export default async function AvailabilityPage({
         </div>
       )}
 
+      {params.bulk && (
+        <div className="pr-dash-card" style={{ borderColor: "var(--green)", marginBottom: "16px" }}>
+          <span className="pr-dash-badge pr-dash-badge-ok">Done</span>{" "}
+          {params.bulk === "close" && `${Number(params.n) || 0} departure(s) closed across the range.`}
+          {params.bulk === "reopen" && `${Number(params.n) || 0} departure(s) reopened.`}
+          {params.bulk === "capacity" &&
+            `${Number(params.n) || 0} departure(s) updated${(Number(params.skipped) || 0) > 0 ? `, ${params.skipped} skipped (guests already booked)` : ""}.`}
+          {params.bulk === "undo" && `Undone — ${Number(params.n) || 0} departure(s) reopened.`}
+        </div>
+      )}
+
       <div className="pr-dash-card pr-avail-toolbar">
         <form method="get" className="pr-dash-actions" style={{ margin: 0 }}>
           <input type="hidden" name="month" value={month} />
@@ -135,6 +161,10 @@ export default async function AvailabilityPage({
         <div className="pr-avail-stat"><span className="pr-avail-stat-lbl">Avg occupancy</span><span className="pr-avail-stat-val">{occupancy}%</span></div>
         <div className="pr-avail-stat"><span className="pr-avail-stat-lbl">Nearly full</span><span className="pr-avail-stat-val">{nearlyFull}</span></div>
       </div>
+
+      {tourId && (
+        <BulkActions tourId={tourId} month={month} defaultFrom={meta.firstISO} defaultTo={meta.lastISO} />
+      )}
 
       {sessions.length === 0 ? (
         <div className="pr-dash-card">
@@ -210,10 +240,116 @@ export default async function AvailabilityPage({
         </>
       )}
 
+      {recentAudit.length > 0 && <RecentChanges rows={recentAudit} tourId={tourId} month={month} />}
+
       <p className="pr-dash-field-hint" style={{ marginTop: "20px" }}>
         Departures are created automatically each morning from the weekly schedule. The schedule itself (which days and
         times run) isn&apos;t editable here yet.
       </p>
+    </div>
+  );
+}
+
+/**
+ * Range operations on many departures at once (stage C). Collapsed by default
+ * -- calm surface, power on demand. Close is a QUIET block (no refunds); to
+ * refund guests, close a departure individually. Set-capacity skips any
+ * departure it would oversell.
+ */
+function BulkActions({ tourId, month, defaultFrom, defaultTo }: { tourId: string; month: string; defaultFrom: string; defaultTo: string }) {
+  return (
+    <details className="pr-dash-card pr-avail-bulk" style={{ marginBottom: "16px" }}>
+      <summary>Bulk actions — close, reopen or resize a date range</summary>
+      <p className="pr-dash-field-hint" style={{ margin: "8px 0 12px" }}>
+        Applies to this tour. Closing here blocks new bookings across the range but does not refund anyone — to cancel
+        and refund guests, close that departure on its day.
+      </p>
+
+      <div className="pr-avail-bulk-forms">
+        <form action={bulkClose} className="pr-avail-bulk-form">
+          <input type="hidden" name="tourId" value={tourId} />
+          <input type="hidden" name="month" value={month} />
+          <span className="pr-avail-bulk-title">Close a range</span>
+          <div className="pr-dash-actions">
+            <label className="pr-dash-field pr-avail-bulk-date">From<input type="date" name="from" defaultValue={defaultFrom} /></label>
+            <label className="pr-dash-field pr-avail-bulk-date">To<input type="date" name="to" defaultValue={defaultTo} /></label>
+            <label className="pr-dash-field" style={{ minWidth: "200px", flex: 1 }}>
+              Reason
+              <input name="block_reason" list="pr-close-reasons" placeholder="e.g. monsoon week" required />
+              <datalist id="pr-close-reasons">
+                {CLOSE_REASONS.map((r) => <option key={r} value={r} />)}
+              </datalist>
+            </label>
+            <button type="submit" className="pr-dash-btn pr-dash-btn-danger">Close range</button>
+          </div>
+        </form>
+
+        <form action={bulkReopen} className="pr-avail-bulk-form">
+          <input type="hidden" name="tourId" value={tourId} />
+          <input type="hidden" name="month" value={month} />
+          <span className="pr-avail-bulk-title">Reopen a range</span>
+          <div className="pr-dash-actions">
+            <label className="pr-dash-field pr-avail-bulk-date">From<input type="date" name="from" defaultValue={defaultFrom} /></label>
+            <label className="pr-dash-field pr-avail-bulk-date">To<input type="date" name="to" defaultValue={defaultTo} /></label>
+            <button type="submit" className="pr-dash-btn pr-dash-btn-ghost">Reopen range</button>
+          </div>
+        </form>
+
+        <form action={bulkSetCapacity} className="pr-avail-bulk-form">
+          <input type="hidden" name="tourId" value={tourId} />
+          <input type="hidden" name="month" value={month} />
+          <span className="pr-avail-bulk-title">Set seats for a range</span>
+          <div className="pr-dash-actions">
+            <label className="pr-dash-field pr-avail-bulk-date">From<input type="date" name="from" defaultValue={defaultFrom} /></label>
+            <label className="pr-dash-field pr-avail-bulk-date">To<input type="date" name="to" defaultValue={defaultTo} /></label>
+            <label className="pr-dash-field" style={{ maxWidth: "110px" }}>Seats<input type="number" name="capacity" min={0} placeholder="24" required /></label>
+            <button type="submit" className="pr-dash-btn pr-dash-btn-ghost">Set seats</button>
+          </div>
+        </form>
+      </div>
+    </details>
+  );
+}
+
+const ACTION_LABEL: Record<AvailabilityAuditRow["action"], string> = {
+  bulk_close: "Closed range",
+  bulk_reopen: "Reopened range",
+  bulk_capacity: "Set seats",
+  undo: "Undid a close",
+};
+
+/** Who changed availability, when, and why -- newest first, with Undo on the
+ * most recent close. */
+function RecentChanges({ rows, tourId, month }: { rows: AvailabilityAuditRow[]; tourId: string; month: string }) {
+  // Only the newest not-yet-undone bulk_close gets an Undo button (undoing an
+  // older one out of order would surprise staff).
+  const undoableId = rows.find((r) => r.action === "bulk_close" && r.undone === 0)?.id ?? null;
+  return (
+    <div className="pr-dash-card" style={{ marginTop: "24px" }}>
+      <h2>Recent changes</h2>
+      <div className="pr-avail-audit">
+        {rows.map((r) => (
+          <div key={r.id} className="pr-avail-audit-row">
+            <span className="pr-avail-audit-action">{ACTION_LABEL[r.action]}</span>
+            <span className="pr-dash-field-hint">
+              {r.count} departure{r.count === 1 ? "" : "s"}
+              {r.date_from && r.date_to ? ` · ${r.date_from} → ${r.date_to}` : ""}
+              {r.reason ? ` · ${r.reason}` : ""}
+            </span>
+            <span className="pr-dash-field-hint" style={{ marginLeft: "auto" }}>
+              {r.actor_email} · {formatDateTime(r.created_at)}
+              {r.undone === 1 && r.action === "bulk_close" ? " · undone" : ""}
+            </span>
+            {r.id === undoableId && (
+              <form action={undoAvailabilityAction.bind(null, r.id)}>
+                <input type="hidden" name="tourId" value={tourId} />
+                <input type="hidden" name="month" value={month} />
+                <button type="submit" className="pr-dash-btn pr-dash-btn-ghost pr-dash-btn-sm">Undo</button>
+              </form>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

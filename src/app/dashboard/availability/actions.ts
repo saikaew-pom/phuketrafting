@@ -11,6 +11,7 @@ import { logBookingEvent } from "@/lib/booking";
 import { listActiveBookingsForSession, cancelBookingReleasingSeat, recordEmailNotification } from "@/lib/queries/bookings";
 import { createRefund } from "@/lib/payments";
 import { sendBookingStatusEmail } from "@/lib/brevo";
+import { bulkCloseRange, bulkReopenRange, bulkSetCapacityRange, undoBulkClose } from "@/lib/queries/availability-audit";
 
 /**
  * Staff control over individual departures (plan §3: "Availability: session
@@ -238,6 +239,73 @@ export async function closeSession(sessionId: string, formData: FormData): Promi
     if (v) q.set(k, v);
   }
   redirect(`/dashboard/availability?${q.toString()}`);
+}
+
+// ---- Bulk range actions (stage C) ----
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Validates a bulk range from the form; throws a friendly message on a bad one. */
+function parseRange(formData: FormData): { tourId: string; month: string; from: string; to: string } {
+  const tourId = String(formData.get("tourId") ?? "").trim();
+  const month = String(formData.get("month") ?? "").trim();
+  const from = String(formData.get("from") ?? "").trim();
+  const to = String(formData.get("to") ?? "").trim();
+  if (!tourId) throw new Error("Pick a tour first.");
+  if (!ISO_DATE.test(from) || !ISO_DATE.test(to)) throw new Error("Enter valid from/to dates.");
+  if (from > to) throw new Error("The 'from' date must be on or before the 'to' date.");
+  // A year is well beyond the 120-day generation window; anything larger is a
+  // typo, not an intent, and shouldn't scan the whole table.
+  const spanDays = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+  if (spanDays > 366) throw new Error("That range is too wide -- pick a year or less.");
+  return { tourId, month, from, to };
+}
+
+function backToMonth(tourId: string, month: string, extra: Record<string, string>): string {
+  return `/dashboard/availability?${new URLSearchParams({ tourId, month, ...extra }).toString()}`;
+}
+
+/** Close every open departure in a date range (quiet block -- no refunds). */
+export async function bulkClose(formData: FormData): Promise<void> {
+  const staff = await requireStaff();
+  const { tourId, month, from, to } = parseRange(formData);
+  const reason = String(formData.get("block_reason") ?? "").trim();
+  if (!reason) throw new Error("Give a reason for closing these dates.");
+  const n = await bulkCloseRange(tourId, from, to, reason, staff.email);
+  revalidatePath("/dashboard/availability");
+  redirect(backToMonth(tourId, month, { bulk: "close", n: String(n) }));
+}
+
+/** Reopen every closed departure in a date range. */
+export async function bulkReopen(formData: FormData): Promise<void> {
+  const staff = await requireStaff();
+  const { tourId, month, from, to } = parseRange(formData);
+  const n = await bulkReopenRange(tourId, from, to, staff.email);
+  revalidatePath("/dashboard/availability");
+  redirect(backToMonth(tourId, month, { bulk: "reopen", n: String(n) }));
+}
+
+/** Set capacity for every priceable departure in a date range (skips oversold ones). */
+export async function bulkSetCapacity(formData: FormData): Promise<void> {
+  const staff = await requireStaff();
+  const { tourId, month, from, to } = parseRange(formData);
+  const raw = String(formData.get("capacity") ?? "").trim();
+  if (!raw) throw new Error("Capacity is required.");
+  const capacity = Number(raw);
+  if (!Number.isInteger(capacity) || capacity < 0) throw new Error("Capacity must be a whole number.");
+  const { changed, total } = await bulkSetCapacityRange(tourId, from, to, capacity, staff.email);
+  revalidatePath("/dashboard/availability");
+  redirect(backToMonth(tourId, month, { bulk: "capacity", n: String(changed), skipped: String(total - changed) }));
+}
+
+/** Undo a bulk_close (reopen exactly the departures it blocked). */
+export async function undoAvailabilityAction(auditId: string, formData: FormData): Promise<void> {
+  const staff = await requireStaff();
+  const tourId = String(formData.get("tourId") ?? "").trim();
+  const month = String(formData.get("month") ?? "").trim();
+  const n = await undoBulkClose(auditId, staff.email);
+  revalidatePath("/dashboard/availability");
+  redirect(backToMonth(tourId, month, { bulk: "undo", n: String(n) }));
 }
 
 /**
