@@ -243,8 +243,8 @@ export default async function AvailabilityPage({
       {recentAudit.length > 0 && <RecentChanges rows={recentAudit} tourId={tourId} month={month} />}
 
       <p className="pr-dash-field-hint" style={{ marginTop: "20px" }}>
-        Departures are created automatically each morning from the weekly schedule. The schedule itself (which days and
-        times run) isn&apos;t editable here yet.
+        Departures are created automatically each morning from the weekly schedule. To change which days and times run,
+        edit the <Link href={`/dashboard/schedule?tourId=${tourId}`}>Weekly schedule</Link>.
       </p>
     </div>
   );

@@ -19,6 +19,7 @@ import {
   Package,
   Ticket,
   Inbox,
+  CalendarCog,
   LayoutTemplate,
   Palette,
   Settings,
@@ -47,6 +48,7 @@ const NAV = [
   // whenever the camp calendar is open.
   { href: "/dashboard/availability", label: "Availability", icon: CalendarRange, exact: true },
   { href: "/dashboard/availability/camping", label: "Camp calendar", icon: TentTree },
+  { href: "/dashboard/schedule", label: "Weekly schedule", icon: CalendarCog, adminOnly: true },
   { href: "/dashboard/products/tours", label: "Tours", icon: Waves },
   { href: "/dashboard/products/camping", label: "Camping", icon: Tent },
   { href: "/dashboard/addons", label: "Add-ons", icon: Package },
