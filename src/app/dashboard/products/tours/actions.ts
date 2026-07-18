@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { updateTour, updateTourRatePrice, createTour, deleteTour, moveTour, tourCodeExists } from "@/lib/queries/tours";
+import { updateTour, updateTourRatePrice, createTour, deleteTour, moveTour, tourCodeExists, getTour } from "@/lib/queries/tours";
 import { requireStaff } from "@/lib/access";
 
 // Signals an expected staff data-entry mistake -- caught in saveTour and turned
@@ -71,6 +71,21 @@ export async function saveTour(tourId: string, formData: FormData) {
       rateUpdates.push({ id: rateId, price });
     }
 
+    // Category / homepage / booking-mode: read from the form when the edit page
+    // provides those controls (from stage 2 on), otherwise preserve the tour's
+    // current values so a save can never wipe them. A checkbox sends nothing
+    // when unchecked, so a hidden "home_present" marker distinguishes "the form
+    // had the toggle and it's off" from "the form didn't include it at all".
+    const current = await getTour(tourId);
+    const categoryId = formData.has("category_id")
+      ? String(formData.get("category_id") ?? "").trim()
+      : (current?.category_id ?? "");
+    const showOnHome = formData.has("home_present")
+      ? formData.get("show_on_home") === "on"
+      : current?.show_on_home === 1;
+    const rawMode = String(formData.get("booking_mode") ?? "");
+    const bookingMode = rawMode === "instant" || rawMode === "enquire" ? rawMode : (current?.booking_mode ?? "instant");
+
     await updateTour(tourId, {
       name,
       tagline: String(formData.get("tagline") ?? "").trim(),
@@ -84,6 +99,9 @@ export async function saveTour(tourId: string, formData: FormData) {
       max_group: maxGroup,
       includes: JSON.stringify(includes),
       sort_order: optionalNumber(formData.get("sort_order"), "sort order", { integer: true }) ?? 0,
+      category_id: categoryId,
+      show_on_home: showOnHome,
+      booking_mode: bookingMode,
     });
     for (const r of rateUpdates) await updateTourRatePrice(r.id, tourId, r.price);
   } catch (err) {

@@ -16,6 +16,12 @@ export interface Tour {
   is_active: number;
   sort_order: number;
   cover_image_id: string | null;
+  /** Which category this tour belongs to (migration 0020); null = uncategorised. */
+  category_id: string | null;
+  /** 1 = featured on the homepage (replaces the old PRIMARY_TOUR_IDS constant). */
+  show_on_home: number;
+  /** 'instant' = uses the booking widget; 'enquire' = routes to the enquiry form. */
+  booking_mode: string;
 }
 
 export interface TourRate {
@@ -180,6 +186,11 @@ export interface TourUpdate {
   /** Already JSON-stringified by the caller -- the column is TEXT holding a JSON array. */
   includes: string;
   sort_order: number;
+  /** "" = uncategorised (stored as null). (Migration 0020.) */
+  category_id: string;
+  show_on_home: boolean;
+  /** 'instant' | 'enquire' -- caller validates against the two allowed values. */
+  booking_mode: string;
 }
 
 export async function updateTour(id: string, update: TourUpdate): Promise<void> {
@@ -189,8 +200,10 @@ export async function updateTour(id: string, update: TourUpdate): Promise<void> 
           SET name = ?1, tagline = ?2, description = ?3, badge = ?4,
               is_active = ?5, cover_image_id = ?6, distance_km = ?7,
               duration_label = ?8, min_group = ?9, max_group = ?10,
-              includes = ?11, sort_order = ?12, updated_at = unixepoch()
-        WHERE id = ?13`
+              includes = ?11, sort_order = ?12,
+              category_id = ?13, show_on_home = ?14, booking_mode = ?15,
+              updated_at = unixepoch()
+        WHERE id = ?16`
     )
     .bind(
       update.name,
@@ -205,6 +218,9 @@ export async function updateTour(id: string, update: TourUpdate): Promise<void> 
       update.max_group,
       update.includes,
       update.sort_order,
+      update.category_id || null,
+      update.show_on_home ? 1 : 0,
+      update.booking_mode,
       id
     )
     .run();
