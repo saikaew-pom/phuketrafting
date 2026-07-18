@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTour, getTourRates, parseIncludes } from "@/lib/queries/tours";
+import { listTourCategories } from "@/lib/queries/tour-categories";
 import { saveTour } from "../actions";
 import { ImageUploadField } from "@/components/ImageUploadField";
 import { ProductImageManager } from "@/components/ProductImageManager";
@@ -26,6 +28,7 @@ export default async function TourEditPage({
   if (!tour) notFound();
 
   const rates = await getTourRates(id);
+  const categories = await listTourCategories();
   const saveTourWithId = saveTour.bind(null, id);
   const errorMessage = error ? (TOUR_ERROR_MESSAGES[error] ?? "Something went wrong saving the tour.") : null;
 
@@ -72,6 +75,39 @@ export default async function TourEditPage({
               <input type="checkbox" name="is_active" defaultChecked={tour.is_active === 1} /> Active (visible on site)
             </label>
             <ImageUploadField name="cover_image_id" initialPublicId={tour.cover_image_id} label="Cover image" />
+          </div>
+        </div>
+
+        <div className="pr-dash-card">
+          <h2>Placement</h2>
+          <div className="pr-dash-form">
+            <label className="pr-dash-field" style={{ maxWidth: "320px" }}>
+              Category
+              <select name="category_id" defaultValue={tour.category_id ?? ""}>
+                <option value="">— Uncategorised —</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}{c.is_active ? "" : " (hidden)"}</option>
+                ))}
+              </select>
+              <span className="pr-dash-field-hint">
+                Which homepage group this tour appears under. <Link href="/dashboard/products/categories">Manage categories</Link>.
+              </span>
+            </label>
+            {/* home_present is always sent, so an unchecked box CLEARS the flag
+                (a checkbox alone sends nothing when off -- saveTour would then
+                preserve the old value and staff couldn't un-feature a tour). */}
+            <input type="hidden" name="home_present" value="1" />
+            <label className="pr-dash-check">
+              <input type="checkbox" name="show_on_home" defaultChecked={tour.show_on_home === 1} /> Feature on the homepage
+            </label>
+            <label className="pr-dash-field" style={{ maxWidth: "320px" }}>
+              Booking
+              <select name="booking_mode" defaultValue={tour.booking_mode}>
+                <option value="instant">Book online (uses the booking widget)</option>
+                <option value="enquire">Enquire only (sends to the enquiry form)</option>
+              </select>
+              <span className="pr-dash-field-hint">Use &quot;Enquire only&quot; for private charters or on-request trips with no fixed schedule.</span>
+            </label>
           </div>
         </div>
 
