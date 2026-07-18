@@ -49,7 +49,13 @@ export function buildOrganizationJsonLd() {
   };
 }
 
-export function buildProductsJsonLd(tours: TourCard[], lang: string) {
+/**
+ * `anchor` is the id of the section the card actually renders in. Tours used to
+ * all live in one "#tours" section, so the offer URL could hardcode it; now that
+ * a second category renders as "#tours-<slug>", a hardcoded "#tours" would point
+ * Google at the wrong section for every tour outside the first one.
+ */
+export function buildProductsJsonLd(tours: (TourCard & { anchor?: string })[], lang: string) {
   return tours.map((tour) => ({
     "@context": "https://schema.org",
     "@type": "Product",
@@ -63,7 +69,7 @@ export function buildProductsJsonLd(tours: TourCard[], lang: string) {
       availability: "https://schema.org/InStock",
       // The offer URL points at the page it's embedded on, per locale -- was
       // hardcoded /en on every locale's markup. (Audit A26.)
-      url: `${SITE_URL}/${lang}#tours`,
+      url: `${SITE_URL}/${lang}#${tour.anchor ?? "tours"}`,
     },
     ...(tour.avgRating != null && tour.reviewCount != null
       ? {

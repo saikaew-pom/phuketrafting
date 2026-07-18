@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { listTours, getTourRates, parseIncludes } from "@/lib/queries/tours";
+import { listTours, listAllTourRates, parseIncludes, type Tour } from "@/lib/queries/tours";
+import { listTourCategories } from "@/lib/queries/tour-categories";
 import { listCampZones, getMinCampRate } from "@/lib/queries/camping";
 import { listPublishedReviews, listTourReviewStats } from "@/lib/queries/reviews";
 import { listPickupZones } from "@/lib/queries/pickup";
@@ -14,7 +15,7 @@ import { SUPPORTED_LOCALES, DEFAULT_LOCALE } from "@/lib/i18n";
 import { serializeJsonLd, buildOrganizationJsonLd, buildProductsJsonLd, buildFaqJsonLd } from "@/lib/jsonld";
 import { Hero } from "@/components/public/Hero";
 import { TrustBar } from "@/components/public/TrustBar";
-import { Tours, type TourCard } from "@/components/public/Tours";
+import { Tours, type TourCard, type TourCategoryHead } from "@/components/public/Tours";
 import { CampBookingSection } from "@/components/public/CampBookingSection";
 import { HowItWorks } from "@/components/public/HowItWorks";
 import { WhyUs } from "@/components/public/WhyUs";
@@ -68,12 +69,6 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
   };
 }
 
-// Primary rafting tiers shown on the Landing page grid, matching the
-// prototype's 3-card layout; the "Extended Run" (7.5 km) variants are
-// deliberately not surfaced here yet -- they belong on a future dedicated
-// Tour Packages comparison page (see BUILD_AND_DEPLOY_PLAN.md Phase 3 scope).
-const PRIMARY_TOUR_IDS = ["tour-b1", "tour-b2", "tour-b3"];
-
 function fromPrice(rates: { price: number }[]): number {
   const positive = rates.map((r) => r.price).filter((p) => p > 0);
   return positive.length ? Math.min(...positive) : 0;
@@ -81,8 +76,10 @@ function fromPrice(rates: { price: number }[]): number {
 
 export default async function LandingPage({ params }: { params: Promise<{ lang: string }> }) {
   const { lang } = await params;
-  const [allTours, campZones, reviews, tourReviewStats, pickupZones, galleryRows] = await Promise.all([
+  const [allTours, allTourRates, tourCategories, campZones, reviews, tourReviewStats, pickupZones, galleryRows] = await Promise.all([
     listTours(),
+    listAllTourRates(),
+    listTourCategories(),
     listCampZones(),
     listPublishedReviews(),
     listTourReviewStats(),
@@ -115,24 +112,33 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
       ? galleryRows.map((g) => ({ publicId: g.image_id, label: g.label ?? "" }))
       : GALLERY.map((g) => ({ publicId: g.publicId, label: g.label }));
 
-  // listTours()/listCampZones() return every row, active or not (the
-  // dashboard listing needs inactive rows too, to let staff re-enable them)
-  // -- the public Landing page must filter to is_active itself.
-  const primaryTours = PRIMARY_TOUR_IDS.map((id) => allTours.find((t) => t.id === id)).filter(
-    (t): t is NonNullable<typeof t> => t != null && t.is_active === 1
-  );
+  // Which tours appear on the homepage, and under which heading, is DATA now
+  // (migration 0020) -- it used to be a hardcoded PRIMARY_TOUR_IDS constant, so
+  // adding a new kind of tour meant a code change. A tour shows here when it is
+  // active AND flagged show_on_home; it renders under its category's section.
+  // listTours() returns every row (the dashboard needs inactive ones too), so
+  // the public page filters is_active itself.
+  const featuredTours = allTours.filter((t) => t.is_active === 1 && t.show_on_home === 1);
 
-  const ratesByTour = await Promise.all(primaryTours.map((t) => getTourRates(t.id)));
+  // One query for every rate row, grouped here -- not one getTourRates() round
+  // trip per featured tour, which would grow with however many tours staff
+  // feature. (Same read-then-group shape as listTourReviewStats below.)
+  const ratesByTourId = new Map<string, { price: number }[]>();
+  for (const rate of allTourRates) {
+    const list = ratesByTourId.get(rate.tour_id);
+    if (list) list.push(rate);
+    else ratesByTourId.set(rate.tour_id, [rate]);
+  }
   const reviewStatsByTour = new Map(tourReviewStats.map((s) => [s.tour_id, s]));
 
-  const tourCards: TourCard[] = primaryTours.map((tour, i) => {
+  const toCard = (tour: Tour): TourCard => {
     const stats = reviewStatsByTour.get(tour.id);
     return {
       id: tour.id,
       name: tour.name,
       tagline: tour.tagline,
       coverImageId: tour.cover_image_id,
-      fromPrice: fromPrice(ratesByTour[i]),
+      fromPrice: fromPrice(ratesByTourId.get(tour.id) ?? []),
       durationLabel: tour.duration_label,
       groupLabel: tour.min_group != null && tour.max_group != null ? `${tour.min_group}–${tour.max_group} guests` : null,
       badge: tour.badge,
@@ -141,10 +147,58 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
       highlights: parseIncludes(tour.includes),
       avgRating: stats?.avg_rating ?? null,
       reviewCount: stats?.review_count ?? null,
+      // 'enquire' tours have no online schedule -- their card asks for an
+      // enquiry instead of pointing at the booking widget.
+      bookingMode: tour.booking_mode === "enquire" ? "enquire" : "instant",
     };
-  });
+  };
 
-  const bookingTours = tourCards.map((t) => ({ id: t.id, name: t.name, fromPrice: t.fromPrice }));
+  // Sections, in category order; a category with no featured tours is skipped
+  // so an empty group can never render a bare heading. allTours is already
+  // sorted by sort_order, so each group keeps the staff-chosen order.
+  //
+  // Note what this DROPS: a tour flagged show_on_home whose category_id is null,
+  // or whose category is inactive, belongs to no section and so renders nowhere.
+  // That is deliberate (a marketing homepage should not grow an "Uncategorised"
+  // heading), but it means the flag can be silently ineffective -- staff need a
+  // dashboard warning for it, tracked separately.
+  const homeSections = tourCategories
+    .filter((c) => c.is_active === 1)
+    .map((c): { category: TourCategoryHead; tours: TourCard[] } => ({
+      category: c,
+      tours: featuredTours.filter((t) => t.category_id === c.id).map(toCard),
+    }))
+    .filter((s) => s.tours.length > 0);
+
+  // Nav, Hero, WhyUs, the footer and every blog post link to "#tours". Before
+  // the homepage was data-driven the section rendered unconditionally, so that
+  // anchor always existed; now a site with no active category (one toggle on
+  // the categories screen) would drop it -- and take the camping teaser, which
+  // lives in the first section's grid, down with it. The fallback keeps the
+  // landmark and the teaser, using the heading the page had before stage 3.
+  const FALLBACK_HEAD: TourCategoryHead = {
+    id: "cat-fallback",
+    slug: "tours",
+    name: "Pick your package",
+    tagline: null,
+  };
+  const sectionsToRender = (homeSections.length > 0 ? homeSections : [{ category: FALLBACK_HEAD, tours: [] }]).map(
+    (s, i) => ({ ...s, anchorId: i === 0 ? "tours" : `tours-${s.category.slug}` })
+  );
+
+  // Page-wide summaries are derived from what actually RENDERS, not from
+  // featuredTours: a featured-but-unroutable tour (see above) must not be
+  // advertised by markup or a price the visitor can't find on the page.
+  // Verified live: before this, an uncategorised featured tour still emitted a
+  // Product JSON-LD entry, sat in the widget dropdown, and drove the sticky bar
+  // to "From ฿111" while the cheapest visible card was ฿999.
+  const tourCards: TourCard[] = sectionsToRender.flatMap((s) => s.tours);
+
+  // The booking widget can only sell tours with a real schedule -- 'enquire'
+  // tours are deliberately absent from its dropdown.
+  const bookingTours = tourCards
+    .filter((t) => t.bookingMode !== "enquire")
+    .map((t) => ({ id: t.id, name: t.name, fromPrice: t.fromPrice }));
 
   // No "?? campZones[0]" fallback: if every zone is inactive, staff have
   // deliberately switched camping off (same "Active (visible on site)"
@@ -178,7 +232,12 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
 
   const jsonLd = [
     buildOrganizationJsonLd(),
-    ...buildProductsJsonLd(tourCards, lang),
+    // Each offer URL points at the section the card really renders in, so the
+    // anchor in the markup and the anchor on the page can't drift apart.
+    ...buildProductsJsonLd(
+      sectionsToRender.flatMap((s) => s.tours.map((t) => ({ ...t, anchor: s.anchorId }))),
+      lang
+    ),
     // Skip FAQ markup entirely if staff have hidden them all -- an empty
     // FAQPage is invalid structured data.
     ...(faqItems.length > 0 ? [buildFaqJsonLd(faqItems)] : []),
@@ -191,7 +250,19 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
       ))}
       <Hero tours={bookingTours} pickupZones={pickupZones} addons={bookingAddons} locale={lang} stats={siteStats} hero={hero} />
       <TrustBar stats={siteStats} />
-      <Tours tours={tourCards} camping={camping} />
+      {/* One section per active category that has featured tours. The first
+          carries id="tours" (the nav's "Adventures" anchor) and the camping
+          teaser card, so a single-category site renders exactly as before. */}
+      {sectionsToRender.map((s, i) => (
+        <Tours
+          key={s.category.id}
+          category={s.category}
+          tours={s.tours}
+          camping={i === 0 ? camping : null}
+          anchorId={s.anchorId}
+          showEyebrow={i === 0}
+        />
+      ))}
       {activeCampZones.length > 0 && <CampBookingSection zones={activeCampZones} addons={bookingAddons} locale={lang} />}
       <HowItWorks sections={sections} />
       <WhyUs stats={siteStats} sections={sections} />

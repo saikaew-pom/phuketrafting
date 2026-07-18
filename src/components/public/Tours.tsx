@@ -17,6 +17,16 @@ export interface TourCard {
   highlights: string[];
   avgRating: number | null;
   reviewCount: number | null;
+  /** 'enquire' tours have no bookable schedule -- their CTA asks for an enquiry. */
+  bookingMode: "instant" | "enquire";
+}
+
+/** The homepage grouping this section renders (migration 0020). */
+export interface TourCategoryHead {
+  id: string;
+  slug: string;
+  name: string;
+  tagline: string | null;
 }
 
 export interface CampingTeaser {
@@ -29,14 +39,30 @@ export interface CampingTeaser {
   tagline: string | null;
 }
 
-export function Tours({ tours, camping }: { tours: TourCard[]; camping: CampingTeaser | null }) {
+export function Tours({
+  category,
+  tours,
+  camping,
+  anchorId = "tours",
+  showEyebrow = true,
+}: {
+  category: TourCategoryHead;
+  tours: TourCard[];
+  camping: CampingTeaser | null;
+  /** First section keeps id="tours" so the nav's "Adventures" anchor still lands. */
+  anchorId?: string;
+  showEyebrow?: boolean;
+}) {
   return (
-    <section className="pr-section" id="tours">
+    <section className="pr-section" id={anchorId}>
       <div className="pr-wrap">
         <SectionHead
-          eyebrow="Our adventures"
-          title="Pick your package"
-          sub="Every trip includes safety gear, certified guides, hot showers and a story you'll be telling for years."
+          eyebrow={showEyebrow ? "Our adventures" : undefined}
+          title={category.name}
+          sub={
+            category.tagline ??
+            "Every trip includes safety gear, certified guides, hot showers and a story you'll be telling for years."
+          }
         />
         <div className="pr-tours-grid">
           {tours.map((tour) => (
@@ -89,15 +115,22 @@ export function Tours({ tours, camping }: { tours: TourCard[]; camping: CampingT
                     <span className="pr-tcard-amt">{baht(tour.fromPrice)}</span>
                     <span className="pr-tcard-per">/ person</span>
                   </div>
-                  {/* Goes to the booking form with THIS tour preselected
-                      (BookingWidget listens for #book-<id>). It used to open
-                      WhatsApp: a button labelled "Book", on a site with a
-                      working booking engine, that never reached the booking
-                      form. */}
-                  <a className="pr-btn pr-btn-accent" href={`#book-${tour.id}`}>
-                    Book
-                    <ArrowRight size={16} className="pr-ico" />
-                  </a>
+                  {/* Instant tours go to the booking form with THIS tour
+                      preselected (BookingWidget listens for #book-<id>).
+                      'enquire' tours have no online schedule, so pointing at
+                      the widget would strand the guest -- they go to the
+                      enquiry form instead. */}
+                  {tour.bookingMode === "enquire" ? (
+                    <a className="pr-btn pr-btn-accent" href="#contact">
+                      Enquire
+                      <ArrowRight size={16} className="pr-ico" />
+                    </a>
+                  ) : (
+                    <a className="pr-btn pr-btn-accent" href={`#book-${tour.id}`}>
+                      Book
+                      <ArrowRight size={16} className="pr-ico" />
+                    </a>
+                  )}
                 </div>
               </div>
             </article>
@@ -153,11 +186,14 @@ export function Tours({ tours, camping }: { tours: TourCard[]; camping: CampingT
             </article>
           )}
         </div>
-        <div className="pr-tours-cta">
-          {/* A real comparison built from the same DB fields as the cards --
-              this was a WhatsApp link asking staff to compile it by hand. */}
-          <CompareTable tours={tours} />
-        </div>
+        {/* A real comparison built from the same DB fields as the cards --
+            this was a WhatsApp link asking staff to compile it by hand. Only
+            worth showing when there's actually something to compare. */}
+        {tours.length >= 2 && (
+          <div className="pr-tours-cta">
+            <CompareTable tours={tours} />
+          </div>
+        )}
         <p className="pr-tours-note">
           <Info size={15} className="pr-ico" /> Not sure which to pick?{" "}
           <a href={waLink("Hi! Can you help me choose the right adventure package?")} target="_blank" rel="noreferrer">

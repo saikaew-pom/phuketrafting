@@ -171,6 +171,22 @@ export async function getTourRates(tourId: string): Promise<TourRate[]> {
   return results;
 }
 
+/**
+ * Every rate row in one query, for callers that need prices for MANY tours at
+ * once (the homepage, which prices each featured tour). Calling getTourRates()
+ * per tour was one D1 round trip per card -- fine at the old hardcoded three,
+ * but it grew with however many tours staff feature. tour_rates holds ~2 rows
+ * per tour, so reading the table whole and grouping in JS is cheaper than N
+ * queries. Same shape as listTourReviewStats(): return rows, let the caller
+ * build its own Map.
+ */
+export async function listAllTourRates(): Promise<TourRate[]> {
+  const { results } = await getDb()
+    .prepare("SELECT * FROM tour_rates ORDER BY tour_id, min_age")
+    .all<TourRate>();
+  return results;
+}
+
 export interface TourUpdate {
   name: string;
   tagline: string;
