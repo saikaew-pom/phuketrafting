@@ -6,7 +6,8 @@ import { listPickupZones } from "@/lib/queries/pickup";
 import { listImages } from "@/lib/queries/images";
 import { listActiveFaqs } from "@/lib/queries/faqs";
 import { listActiveAddons } from "@/lib/queries/addons";
-import { getSiteStats, getHero } from "@/lib/queries/settings";
+import { getSiteStats, getHero, getSections, getSeo } from "@/lib/queries/settings";
+import { cloudinaryUrl } from "@/lib/cloudinary";
 import { GALLERY } from "@/lib/content";
 import { SITE_URL, BUSINESS_NAME } from "@/lib/site";
 import { SUPPORTED_LOCALES, DEFAULT_LOCALE } from "@/lib/i18n";
@@ -29,13 +30,13 @@ import { StickyBar } from "@/components/public/StickyBar";
 // (layout.tsx) would otherwise trigger for the "en" params entry.
 export const dynamic = "force-dynamic";
 
-const DESCRIPTION =
-  "White-water rafting, ziplines and ATV adventures through the wild heart of Phang Nga -- run by the pros who've done it safely for 20+ years.";
-
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
   const canonical = `${SITE_URL}/${lang}`;
-  const heroImage = "https://res.cloudinary.com/daxyt9sso/image/upload/f_auto,q_auto,w_1200/au7evtgufphh8vmfyaor";
+  // Staff-editable meta (homepage CMS stage 3). Defaults reproduce the previous
+  // hardcoded values, so an unset row keeps today's SEO exactly.
+  const seo = await getSeo();
+  const heroImage = cloudinaryUrl(seo.shareImageId, 1200);
 
   // Reciprocal hreflang: every locale variant points at every other, plus
   // an x-default fallback. All four locales render today (identical EN
@@ -46,12 +47,12 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
   languages["x-default"] = `${SITE_URL}/${DEFAULT_LOCALE}`;
 
   return {
-    title: `${BUSINESS_NAME} -- Rafting, Ziplines & ATV in Phang Nga`,
-    description: DESCRIPTION,
+    title: seo.title,
+    description: seo.description,
     alternates: { canonical, languages },
     openGraph: {
-      title: BUSINESS_NAME,
-      description: DESCRIPTION,
+      title: seo.title,
+      description: seo.description,
       url: canonical,
       siteName: BUSINESS_NAME,
       images: [{ url: heroImage, width: 1200, height: 630 }],
@@ -60,8 +61,8 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
     },
     twitter: {
       card: "summary_large_image",
-      title: BUSINESS_NAME,
-      description: DESCRIPTION,
+      title: seo.title,
+      description: seo.description,
       images: [heroImage],
     },
   };
@@ -90,6 +91,7 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
   ]);
   const siteStats = await getSiteStats();
   const hero = await getHero();
+  const sections = await getSections();
   const faqRows = await listActiveFaqs();
   // Priced add-ons (migration 0018), shown as tick-boxes in both booking
   // widgets. The widget sends only the ticked ids; price/name are re-resolved
@@ -191,13 +193,13 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
       <TrustBar stats={siteStats} />
       <Tours tours={tourCards} camping={camping} />
       {activeCampZones.length > 0 && <CampBookingSection zones={activeCampZones} addons={bookingAddons} locale={lang} />}
-      <HowItWorks />
-      <WhyUs stats={siteStats} />
+      <HowItWorks sections={sections} />
+      <WhyUs stats={siteStats} sections={sections} />
       <Reviews reviews={reviewCards} stats={siteStats} />
       <Gallery items={galleryItems} />
       <FAQ items={faqItems} />
       <EnquirySection locale={lang} />
-      <FinalCTA />
+      <FinalCTA sections={sections} />
       <StickyBar fromPrice={Number.isFinite(stickyFromPrice) ? stickyFromPrice : 0} stats={siteStats} />
     </>
   );

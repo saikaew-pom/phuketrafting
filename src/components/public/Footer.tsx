@@ -5,7 +5,7 @@ import { listTours } from "@/lib/queries/tours";
 import { getSiteStats, type Logo } from "@/lib/queries/settings";
 import { cloudinaryUrl } from "@/lib/cloudinary";
 
-export async function Footer({ locale, logo }: { locale: string; logo: Logo }) {
+export async function Footer({ locale, logo, strapline }: { locale: string; logo: Logo; strapline: string }) {
   const stats = await getSiteStats();
   const tours = await listTours();
 
@@ -21,7 +21,7 @@ export async function Footer({ locale, logo }: { locale: string; logo: Logo }) {
               {logo.wordOne} <span>{logo.wordTwo}</span>
             </span>
           )}
-          <p>Phang Nga&apos;s most experienced white-water rafting, zipline &amp; ATV operator since 2002.</p>
+          <p>{strapline}</p>
           <a
             className="pr-btn pr-btn-accent"
             href={waLink("Hi! I'd like to book an adventure.")}

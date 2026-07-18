@@ -487,6 +487,144 @@ export async function writeHero(hero: HeroContent, updatedBy: string): Promise<v
 }
 
 /**
+ * The supporting homepage bands (homepage CMS, stage 3): How-it-works,
+ * Why-us, the closing CTA, and the footer strapline. Every field defaults to
+ * today's exact copy, so an absent/malformed row renders the site unchanged.
+ * The step/why ICONS stay fixed in code -- only the words are editable -- so
+ * `steps`/`whyCards` are a FIXED-length list overlaid onto the defaults by
+ * index (never add/remove), and each item's blank field falls back per-field.
+ */
+export interface SectionItem {
+  title: string;
+  text: string;
+}
+
+export interface SectionsContent {
+  howEyebrow: string;
+  howTitle: string;
+  howSub: string;
+  steps: SectionItem[];
+  whyEyebrow: string;
+  whyTitle: string;
+  whyLead: string;
+  whyCards: SectionItem[];
+  finalPill: string;
+  finalHeading: string;
+  finalSub: string;
+  finalImageId: string;
+  finalPrimaryLabel: string;
+  footerStrapline: string;
+}
+
+export const DEFAULT_SECTIONS: SectionsContent = {
+  howEyebrow: "Easy as it gets",
+  howTitle: "Booked in four simple steps",
+  howSub: "No accounts, no hassle. A small deposit locks in your date -- pay the balance on the day.",
+  steps: [
+    { title: "Pick your adventure", text: "Choose the package that fits your crew and your appetite for thrills." },
+    { title: "Book in seconds", text: "Reserve your date online or on WhatsApp -- a small deposit locks it in, balance on the day." },
+    { title: "Get picked up", text: "We arrange transfers from Phuket & Khao Lak. Just be ready with a smile." },
+    { title: "Go wild", text: "Raft, zip and ride through the jungle with pros watching your back." },
+  ],
+  whyEyebrow: "Why Phuket Rafting",
+  whyTitle: "20+ years of thrills. Zero worries.",
+  whyLead:
+    "Craving adventure but worried about the risks? We've solved that. We turn the chaos of the jungle into a seamless, safe and genuinely clean experience you'll want to repeat.",
+  whyCards: [
+    { title: "20+ years, zero compromise", text: "Phang Nga's most experienced operator since 2002. Certified guides supervise every group." },
+    { title: "Hot showers & clean facilities", text: "Real changing rooms, hot showers and lockers -- you leave fresh, not muddy." },
+    { title: "Top-grade safety gear", text: "Helmets, vests and equipment inspected before every trip. Safety briefing in English." },
+    { title: "{travelerCount} happy travelers", text: "Families, couples and backpackers -- rated {googleRating}★ across {reviewCount} reviews." },
+    { title: "Pristine jungle setting", text: "Real rainforest rapids in Phang Nga, kept clean and protected -- not a crowded tourist trap." },
+    { title: "Easy WhatsApp booking", text: "Message us and we'll confirm in minutes. Flexible dates, friendly humans, no call centers." },
+  ],
+  finalPill: "Phang Nga, Thailand",
+  finalHeading: "Your jungle adventure is one message away.",
+  finalSub: "Reserve your date with a small deposit, pay the balance on the day, and let the pros handle the rest. Let's go wild.",
+  finalImageId: "nefv70opn9cdgw7un7nw",
+  finalPrimaryLabel: "Reserve your spot",
+  footerStrapline: "Phang Nga's most experienced white-water rafting, zipline & ATV operator since 2002.",
+};
+
+const SECTIONS_KEY = "sections";
+
+/** Overlay a stored list onto the defaults BY INDEX -- fixed count, per-field fallback. */
+function mergeItems(raw: unknown, defaults: readonly SectionItem[]): SectionItem[] {
+  const arr = Array.isArray(raw) ? raw : [];
+  return defaults.map((d, i) => {
+    const item = arr[i] && typeof arr[i] === "object" ? (arr[i] as Record<string, unknown>) : {};
+    const s = (k: "title" | "text"): string =>
+      typeof item[k] === "string" && (item[k] as string).trim() !== "" ? (item[k] as string) : d[k];
+    return { title: s("title"), text: s("text") };
+  });
+}
+
+export async function getSections(dbOverride?: D1Database): Promise<SectionsContent> {
+  const raw = await readSetting(SECTIONS_KEY, dbOverride);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return DEFAULT_SECTIONS;
+  const v = raw as Record<string, unknown>;
+  const str = (key: keyof SectionsContent): string => {
+    const value = v[key];
+    return typeof value === "string" && value.trim() !== "" ? value : (DEFAULT_SECTIONS[key] as string);
+  };
+  return {
+    howEyebrow: str("howEyebrow"),
+    howTitle: str("howTitle"),
+    howSub: str("howSub"),
+    steps: mergeItems(v.steps, DEFAULT_SECTIONS.steps),
+    whyEyebrow: str("whyEyebrow"),
+    whyTitle: str("whyTitle"),
+    whyLead: str("whyLead"),
+    whyCards: mergeItems(v.whyCards, DEFAULT_SECTIONS.whyCards),
+    finalPill: str("finalPill"),
+    finalHeading: str("finalHeading"),
+    finalSub: str("finalSub"),
+    finalImageId: str("finalImageId"),
+    finalPrimaryLabel: str("finalPrimaryLabel"),
+    footerStrapline: str("footerStrapline"),
+  };
+}
+
+export async function writeSections(sections: SectionsContent, updatedBy: string): Promise<void> {
+  await getDb().prepare(UPSERT_SETTING).bind(SECTIONS_KEY, JSON.stringify(sections), updatedBy).run();
+}
+
+/**
+ * SEO meta (homepage CMS, stage 3): the browser-tab title, the search-result
+ * description, and the social-share image (Cloudinary public_id). Defaults
+ * reproduce today's hardcoded metadata in app/[lang]/page.tsx.
+ */
+export interface SeoContent {
+  title: string;
+  description: string;
+  shareImageId: string;
+}
+
+export const DEFAULT_SEO: SeoContent = {
+  title: "Phuket Rafting (Le Rafting & ATV) -- Rafting, Ziplines & ATV in Phang Nga",
+  description:
+    "White-water rafting, ziplines and ATV adventures through the wild heart of Phang Nga -- run by the pros who've done it safely for 20+ years.",
+  shareImageId: "au7evtgufphh8vmfyaor",
+};
+
+const SEO_KEY = "seo";
+
+export async function getSeo(dbOverride?: D1Database): Promise<SeoContent> {
+  const raw = await readSetting(SEO_KEY, dbOverride);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return DEFAULT_SEO;
+  const v = raw as Record<string, unknown>;
+  const str = (key: keyof SeoContent): string => {
+    const value = v[key];
+    return typeof value === "string" && value.trim() !== "" ? value : DEFAULT_SEO[key];
+  };
+  return { title: str("title"), description: str("description"), shareImageId: str("shareImageId") };
+}
+
+export async function writeSeo(seo: SeoContent, updatedBy: string): Promise<void> {
+  await getDb().prepare(UPSERT_SETTING).bind(SEO_KEY, JSON.stringify(seo), updatedBy).run();
+}
+
+/**
  * Theme + logo as ONE transaction -- the Appearance screen saves them together,
  * and a half-applied save (new colour, old logo, or vice versa) is a visibly
  * broken brand. Same batched-as-one-transaction reasoning as writePolicies.

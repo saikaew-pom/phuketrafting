@@ -5,7 +5,7 @@ import { Nav } from "@/components/public/Nav";
 import { Footer } from "@/components/public/Footer";
 import { ConsentBanner } from "@/components/public/ConsentBanner";
 import { ChatWidget } from "@/components/public/ChatWidget";
-import { getChatPolicy, getTheme, getLogo } from "@/lib/queries/settings";
+import { getChatPolicy, getTheme, getLogo, getSections } from "@/lib/queries/settings";
 import { deriveThemeVars } from "@/lib/theme";
 import { Analytics } from "@/components/public/Analytics";
 
@@ -39,7 +39,7 @@ export default async function LangLayout({
   const { lang } = await params;
   if (!isSupportedLocale(lang)) notFound();
 
-  const [chat, theme, logo] = await Promise.all([getChatPolicy(), getTheme(), getLogo()]);
+  const [chat, theme, logo, sections] = await Promise.all([getChatPolicy(), getTheme(), getLogo(), getSections()]);
   // One admin-chosen brand colour, expanded to the three accent tokens and
   // emitted as a <style> that overrides the :root defaults for everything
   // inside .pr-app. Server-rendered, so there's no flash of the old colour.
@@ -55,7 +55,7 @@ export default async function LangLayout({
       <Analytics />
       <Nav locale={lang} logo={logo} />
       {children}
-      <Footer locale={lang} logo={logo} />
+      <Footer locale={lang} logo={logo} strapline={sections.footerStrapline} />
       <ConsentBanner locale={lang} />
       {/* Server-side gate: staff turning the chatbot off must ship NO widget,
           not a launcher that fails on click. Plan §9's master toggle. */}
