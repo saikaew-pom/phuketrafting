@@ -1,9 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireStaff } from "@/lib/access";
+import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { requireStaff, requireAdmin } from "@/lib/access";
 import { getDb } from "@/lib/db";
 import { generateSessions } from "@/lib/session-generator";
+import { logBookingEvent } from "@/lib/booking";
+import { listActiveBookingsForSession, cancelBookingReleasingSeat, recordEmailNotification } from "@/lib/queries/bookings";
+import { createRefund } from "@/lib/payments";
+import { sendBookingStatusEmail } from "@/lib/brevo";
 
 /**
  * Staff control over individual departures (plan §3: "Availability: session
@@ -97,6 +104,140 @@ export async function setSessionCapacity(sessionId: string, formData: FormData):
       (session.allotment_hold > 0 ? ` and ${session.allotment_hold} seat(s) are held for agents` : "") +
       ` -- capacity can't go below ${floor}. Move or cancel them first.`
   );
+}
+
+/**
+ * Consequence-aware close of a departure that has bookings on it.
+ *
+ * `mode`:
+ *  - "quiet"  -> just block the departure (no email, no refund). The guests
+ *               stay booked; staff will handle them. Same effect as
+ *               setSessionBlocked, kept here so the confirmation flow has one
+ *               entry point.
+ *  - "refund" -> block, THEN cancel every active booking on it (releasing its
+ *               seat), refund the deposit of the paid ones via Stripe, and
+ *               email each guest that their trip is cancelled.
+ *
+ * Admin-gated, not staff: this moves real money. Ordering is deliberate --
+ * block FIRST (a guarded UPDATE) so no new booking can land mid-batch, then
+ * process the existing guests. Each guest is handled in its own try/catch and
+ * every outcome is logged: one failed refund or email must not abort the rest,
+ * and the seat-release + cancellation (the D1 truth) has already committed
+ * atomically via cancelBookingReleasingSeat before the external calls run, so
+ * a Stripe/Brevo outage degrades to "cancelled, refund/email pending" (staff
+ * retry from the booking), never to a half-cancelled session. Never throws for
+ * a per-guest failure; redirects back with a summary the page shows as a banner.
+ */
+export async function closeSession(sessionId: string, formData: FormData): Promise<void> {
+  const admin = await requireAdmin();
+
+  const reason = String(formData.get("block_reason") ?? "").trim();
+  if (!reason) throw new Error("Give a reason for closing this departure.");
+  const mode = formData.get("mode") === "refund" ? "refund" : "quiet";
+
+  const db = getDb();
+  // Block first. Guarded UPDATE, same as setSessionBlocked -- a departure that
+  // vanished shouldn't silently no-op into a refund run.
+  const blockResult = await db
+    .prepare("UPDATE tour_sessions SET is_blocked = 1, block_reason = ?1, updated_at = unixepoch() WHERE id = ?2")
+    .bind(reason, sessionId)
+    .run();
+  if (blockResult.meta.changes === 0) throw new Error("That departure no longer exists.");
+
+  let cancelled = 0;
+  let refunded = 0;
+  let failed = 0;
+
+  if (mode === "refund") {
+    const bookings = await listActiveBookingsForSession(sessionId);
+    const { env } = getCloudflareContext();
+    const host = (await headers()).get("host");
+
+    for (const b of bookings) {
+      try {
+        // Atomic: releases the seat AND flips status to cancelled. If this
+        // returns false the booking was already cancelled/absent -- skip.
+        const cancelledOk = await cancelBookingReleasingSeat(b.id);
+        if (!cancelledOk) continue;
+        cancelled++;
+        await logBookingEvent(b.id, admin.email, "cancelled_by_closure", { reason, session_id: sessionId });
+
+        // Refund only what was actually captured. A deposit-mode booking that
+        // paid shows payment_status "paid" with a Stripe session; anything
+        // awaiting_payment/pay-on-day has nothing to refund.
+        if (b.payment_status === "paid" && b.stripe_checkout_session_id) {
+          try {
+            const refund = await createRefund(
+              { sessionId: b.stripe_checkout_session_id, amountBaht: null, reason, actorEmail: admin.email },
+              env
+            );
+            refunded++;
+            await logBookingEvent(b.id, admin.email, "refund_issued", {
+              reason,
+              refund_id: refund.id,
+              amount_satang: refund.amountSatang,
+              status: refund.status,
+            });
+          } catch (refundErr) {
+            failed++;
+            console.error(`closeSession: refund failed for ${b.id}`, refundErr);
+            await logBookingEvent(b.id, admin.email, "refund_failed", {
+              reason,
+              error: refundErr instanceof Error ? refundErr.message : String(refundErr),
+            }).catch(() => {});
+          }
+        }
+
+        // Cancellation email -- best effort, never blocks the cancellation, but
+        // its OUTCOME is recorded (last_email_status + an activity-log event),
+        // same as changeBookingStatus's sendStatusChangeNotifications. Without
+        // this a guest could be cancelled+refunded and silently NOT emailed
+        // (Brevo unconfigured returns false, not a throw) with no trace of why.
+        if (b.guest_email) {
+          const manageUrl = b.manage_token && host ? `https://${host}/${b.locale}/manage/${b.manage_token}` : null;
+          try {
+            const sent = await sendBookingStatusEmail(
+              {
+                guestName: b.guest_name,
+                guestEmail: b.guest_email,
+                productName: b.product_name,
+                date: b.date,
+                total: b.total,
+                currency: b.currency,
+                manageUrl,
+              },
+              "cancelled"
+            );
+            await recordEmailNotification(b.id, sent ? "sent" : "not_configured");
+            await logBookingEvent(b.id, admin.email, "cancellation_email", { result: sent ? "sent" : "not_configured" });
+          } catch (mailErr) {
+            console.error(`closeSession: cancellation email failed for ${b.id}`, mailErr);
+            await recordEmailNotification(b.id, "failed").catch(() => {});
+            await logBookingEvent(b.id, admin.email, "cancellation_email", {
+              result: "failed",
+              error: mailErr instanceof Error ? mailErr.message : String(mailErr),
+            }).catch(() => {});
+          }
+        } else {
+          await logBookingEvent(b.id, admin.email, "cancellation_email", { result: "skipped", reason: "no guest email on file" }).catch(() => {});
+        }
+      } catch (err) {
+        failed++;
+        console.error(`closeSession: processing failed for ${b.id}`, err);
+      }
+    }
+  }
+
+  revalidatePath("/dashboard/availability");
+  revalidatePath("/dashboard/bookings");
+  // Back to the same day view (drop ?close) with a one-line summary banner.
+  // tourId/month/day ride along as hidden fields so we return to context.
+  const q = new URLSearchParams({ closed: mode, cancelled: String(cancelled), refunded: String(refunded), failed: String(failed) });
+  for (const k of ["tourId", "month", "day"] as const) {
+    const v = String(formData.get(k) ?? "").trim();
+    if (v) q.set(k, v);
+  }
+  redirect(`/dashboard/availability?${q.toString()}`);
 }
 
 /**

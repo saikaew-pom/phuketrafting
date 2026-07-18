@@ -2412,6 +2412,26 @@ select.pr-input {
   margin-left: auto;
 }
 
+.pr-avail-affected {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.pr-avail-affected-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  font-size: 13.5px;
+  border-top: 1px solid var(--line);
+}
+.pr-avail-affected-row:first-child {
+  border-top: none;
+}
+
 /* ---- Appearance screen (homepage CMS) ---- */
 .pr-appear-presets {
   display: flex;

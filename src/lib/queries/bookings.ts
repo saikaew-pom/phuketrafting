@@ -337,6 +337,50 @@ export async function releaseUnpaidBooking(id: string, dbOverride?: D1Database):
  * so `tour_session_id IS NOT NULL` makes the release a no-op for them --
  * cancelling the row IS the release. Returns whether the booking was cancelled.
  */
+/**
+ * Active bookings on one tour departure -- who is affected if staff close it.
+ * Only pending/confirmed (the states a close would strand); completed/no_show
+ * are past and cancelled is already gone. Carries everything the close flow
+ * needs: party size + deposit for the "who's affected" summary, payment_status
+ * + stripe session to decide refundability, and product/date/locale/token for
+ * the cancellation email -- so the caller needs no per-booking re-read.
+ */
+export interface SessionAffectedBooking {
+  id: string;
+  guest_name: string;
+  guest_email: string | null;
+  adults: number;
+  children: number;
+  infants: number;
+  deposit_amount: number;
+  total: number;
+  currency: string;
+  payment_status: string;
+  stripe_checkout_session_id: string | null;
+  locale: string;
+  manage_token: string | null;
+  product_name: string;
+  date: string;
+}
+
+export async function listActiveBookingsForSession(sessionId: string): Promise<SessionAffectedBooking[]> {
+  const { results } = await getDb()
+    .prepare(
+      `SELECT b.id, b.guest_name, b.guest_email, b.adults, b.children, b.infants,
+              b.deposit_amount, b.total, b.currency, b.payment_status,
+              b.stripe_checkout_session_id, b.locale, b.manage_token,
+              t.name AS product_name, ts.date AS date
+         FROM bookings b
+         JOIN tour_sessions ts ON b.tour_session_id = ts.id
+         JOIN tours t ON ts.tour_id = t.id
+        WHERE b.tour_session_id = ?1 AND b.status IN ('pending','confirmed')
+        ORDER BY b.created_at`
+    )
+    .bind(sessionId)
+    .all<SessionAffectedBooking>();
+  return results;
+}
+
 export async function cancelBookingReleasingSeat(id: string): Promise<boolean> {
   const db = getDb();
   const ACTIVE_GUARD = "status IN ('pending','confirmed','completed','no_show')";

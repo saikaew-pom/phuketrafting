@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { listTours } from "@/lib/queries/tours";
 import { listTourSessionsForAdmin, type AdminTourSession } from "@/lib/scheduling";
-import { bangkokTodayISO } from "@/lib/format";
+import { listActiveBookingsForSession, type SessionAffectedBooking } from "@/lib/queries/bookings";
+import { bangkokTodayISO, baht } from "@/lib/format";
 import { monthMeta, isValidMonth, monthOf, dayISO, longDateLabel, WEEKDAY_LABELS } from "@/lib/calendar";
-import { setSessionBlocked, setSessionCapacity, generateNow } from "./actions";
+import { setSessionBlocked, setSessionCapacity, generateNow, closeSession } from "./actions";
 
 // The four departure states drive the chip colour AND the legend, so they're
 // defined once. "full" folds in the sold-out and (defensive) zero-sellable
@@ -18,10 +19,26 @@ function depState(s: AdminTourSession): DepState {
   return "open";
 }
 
+/** One place builds availability URLs so the panel + confirm can't drift. */
+function availHref(tourId: string, month: string, extra: Record<string, string>): string {
+  return `/dashboard/availability?${new URLSearchParams({ tourId, month, ...extra }).toString()}`;
+}
+
+const CLOSE_REASONS = ["River too high", "Bad weather", "Maintenance", "Not enough bookings", "Private charter"];
+
 export default async function AvailabilityPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tourId?: string; month?: string; day?: string }>;
+  searchParams: Promise<{
+    tourId?: string;
+    month?: string;
+    day?: string;
+    close?: string;
+    closed?: string;
+    cancelled?: string;
+    refunded?: string;
+    failed?: string;
+  }>;
 }) {
   const params = await searchParams;
   const tours = await listTours();
@@ -36,8 +53,6 @@ export default async function AvailabilityPage({
   const today = bangkokTodayISO();
   const month = params.month && isValidMonth(params.month) ? params.month : monthOf(today);
   const meta = monthMeta(month);
-  // A ?day= is only honoured if it's inside the month being shown -- a stale
-  // link from another month shouldn't open a panel for a day not on screen.
   const selectedDay =
     params.day && monthOf(params.day) === month && params.day >= meta.firstISO && params.day <= meta.lastISO
       ? params.day
@@ -45,14 +60,18 @@ export default async function AvailabilityPage({
 
   const sessions = tourId ? await listTourSessionsForAdmin(tourId, meta.firstISO, meta.lastISO) : [];
 
-  // Group departures by date once; the grid and the day panel both read it.
   const byDate = new Map<string, AdminTourSession[]>();
   for (const s of sessions) {
     if (!byDate.has(s.date)) byDate.set(s.date, []);
     byDate.get(s.date)!.push(s);
   }
 
-  // Month summary (the "shape" strip).
+  // A close is in progress only for a departure actually in the selected day.
+  const closeTarget =
+    selectedDay && params.close ? (byDate.get(selectedDay) ?? []).find((s) => s.id === params.close) ?? null : null;
+  const affected = closeTarget ? await listActiveBookingsForSession(closeTarget.id) : [];
+
+  // Month summary.
   let closed = 0;
   let nearlyFull = 0;
   let sumBooked = 0;
@@ -69,10 +88,7 @@ export default async function AvailabilityPage({
   }
   const occupancy = sumSellable > 0 ? Math.round((sumBooked / sumSellable) * 100) : 0;
 
-  const base = (extra: Record<string, string>) => {
-    const q = new URLSearchParams({ tourId, month, ...extra });
-    return `/dashboard/availability?${q.toString()}`;
-  };
+  const base = (extra: Record<string, string>) => availHref(tourId, month, extra);
 
   return (
     <div>
@@ -84,7 +100,18 @@ export default async function AvailabilityPage({
         <p>Pick a tour and month. Each day shows its departures, coloured by how full they are. Click a day to manage it.</p>
       </div>
 
-      {/* Toolbar: tour switcher (GET form) + month nav (links) */}
+      {/* Result banner after a close-with-refund */}
+      {params.closed && (
+        <div className="pr-dash-card" style={{ borderColor: (Number(params.failed) || 0) > 0 ? "var(--accent-dark)" : "var(--green)", marginBottom: "16px" }}>
+          <span className={"pr-dash-badge " + ((Number(params.failed) || 0) > 0 ? "pr-dash-badge-warn" : "pr-dash-badge-ok")}>
+            Departure closed
+          </span>{" "}
+          {params.closed === "refund"
+            ? `${Number(params.cancelled) || 0} booking(s) cancelled, ${Number(params.refunded) || 0} deposit(s) refunded${(Number(params.failed) || 0) > 0 ? `, ${params.failed} need a manual retry (see the booking's activity log)` : ""}.`
+            : "Closed quietly — no guests were emailed or refunded."}
+        </div>
+      )}
+
       <div className="pr-dash-card pr-avail-toolbar">
         <form method="get" className="pr-dash-actions" style={{ margin: 0 }}>
           <input type="hidden" name="month" value={month} />
@@ -102,7 +129,6 @@ export default async function AvailabilityPage({
         </div>
       </div>
 
-      {/* Summary strip */}
       <div className="pr-avail-summary">
         <div className="pr-avail-stat"><span className="pr-avail-stat-lbl">Departures</span><span className="pr-avail-stat-val">{sessions.length}</span></div>
         <div className="pr-avail-stat"><span className="pr-avail-stat-lbl">Closed</span><span className="pr-avail-stat-val" style={{ color: closed > 0 ? "var(--accent-dark)" : undefined }}>{closed}</span></div>
@@ -169,7 +195,18 @@ export default async function AvailabilityPage({
             <span><span className="pr-avail-dot pr-avail-chip-closed" /> closed</span>
           </div>
 
-          {selectedDay && <DayPanel date={selectedDay} deps={byDate.get(selectedDay) ?? []} />}
+          {closeTarget ? (
+            <CloseConfirm
+              session={closeTarget}
+              affected={affected}
+              tourId={tourId}
+              month={month}
+              day={selectedDay!}
+              backHref={base({ day: selectedDay! })}
+            />
+          ) : selectedDay ? (
+            <DayPanel date={selectedDay} deps={byDate.get(selectedDay) ?? []} tourId={tourId} month={month} />
+          ) : null}
         </>
       )}
 
@@ -182,11 +219,11 @@ export default async function AvailabilityPage({
 }
 
 /**
- * The manage-one-day panel: each departure's capacity + close/reopen. Reuses
- * the same guarded server actions as before -- this is a layout change, not a
- * behaviour change.
+ * The manage-one-day panel. A departure with NO booked seats closes inline with
+ * a reason (the fast path). A departure that HAS bookings routes to the
+ * consequence-aware CloseConfirm instead, so staff never silently strand guests.
  */
-function DayPanel({ date, deps }: { date: string; deps: AdminTourSession[] }) {
+function DayPanel({ date, deps, tourId, month }: { date: string; deps: AdminTourSession[]; tourId: string; month: string }) {
   if (deps.length === 0) {
     return (
       <div className="pr-dash-card" style={{ marginTop: "16px" }}>
@@ -215,7 +252,6 @@ function DayPanel({ date, deps }: { date: string; deps: AdminTourSession[] }) {
               {s.is_blocked === 1 && s.block_reason && <span className="pr-dash-field-hint"> — {s.block_reason}</span>}
             </span>
             <div className="pr-avail-row-actions">
-              {/* Capacity -- min mirrors the server guard (can't cut below sold+held). */}
               <form action={setSessionCapacity.bind(null, s.id)} className="pr-dash-actions">
                 <input
                   type="number"
@@ -232,6 +268,11 @@ function DayPanel({ date, deps }: { date: string; deps: AdminTourSession[] }) {
                 <form action={setSessionBlocked.bind(null, s.id, false)}>
                   <button type="submit" className="pr-dash-btn pr-dash-btn-ghost pr-dash-btn-sm">Reopen</button>
                 </form>
+              ) : s.booked_count > 0 ? (
+                // Has guests -> route to the confirmation (who's affected + refund).
+                <Link href={availHref(tourId, month, { day: date, close: s.id })} className="pr-dash-btn pr-dash-btn-danger pr-dash-btn-sm">
+                  Close…
+                </Link>
               ) : (
                 <form action={setSessionBlocked.bind(null, s.id, true)} className="pr-dash-actions">
                   <input name="block_reason" placeholder="Reason, e.g. river too high" required style={{ width: "180px" }} />
@@ -242,6 +283,84 @@ function DayPanel({ date, deps }: { date: string; deps: AdminTourSession[] }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Consequence-aware close. Shows exactly who's on the departure and what the
+ * two choices do, then submits ONE form -- the button's name="mode" decides
+ * refund vs quiet, so the reason is typed once and shared.
+ */
+function CloseConfirm({
+  session,
+  affected,
+  tourId,
+  month,
+  day,
+  backHref,
+}: {
+  session: AdminTourSession;
+  affected: SessionAffectedBooking[];
+  tourId: string;
+  month: string;
+  day: string;
+  backHref: string;
+}) {
+  const guests = affected.reduce((n, b) => n + b.adults + b.children + b.infants, 0);
+  const depositsDue = affected
+    .filter((b) => b.payment_status === "paid" && b.stripe_checkout_session_id)
+    .reduce((sum, b) => sum + b.deposit_amount, 0);
+
+  return (
+    <div className="pr-dash-card pr-avail-close" style={{ marginTop: "16px", borderColor: "var(--accent-dark)" }}>
+      <h2>Close {session.start_time} on {longDateLabel(day)}?</h2>
+      <p style={{ color: "var(--ink-2)", fontSize: "14px", margin: "0 0 12px" }}>
+        This departure has bookings. Choose what happens to the {affected.length} booking{affected.length === 1 ? "" : "s"}{" "}
+        ({guests} guest{guests === 1 ? "" : "s"}
+        {depositsDue > 0 ? `, ${baht(depositsDue)} in refundable deposits` : ""}) on it.
+      </p>
+
+      <div className="pr-avail-affected">
+        {affected.map((b) => (
+          <div key={b.id} className="pr-avail-affected-row">
+            <span style={{ fontWeight: 600 }}>{b.guest_name}</span>
+            <span className="pr-dash-field-hint">{b.adults + b.children + b.infants} guest{b.adults + b.children + b.infants === 1 ? "" : "s"}</span>
+            <span className="pr-dash-field-hint">{b.guest_email ?? "no email on file"}</span>
+            <span style={{ marginLeft: "auto" }}>
+              {b.payment_status === "paid" && b.stripe_checkout_session_id ? (
+                <span className="pr-dash-badge pr-dash-badge-ok">{baht(b.deposit_amount)} paid</span>
+              ) : (
+                <span className="pr-dash-badge pr-dash-badge-neutral">no deposit to refund</span>
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <form action={closeSession.bind(null, session.id)} className="pr-dash-form" style={{ marginTop: "14px" }}>
+        <input type="hidden" name="tourId" value={tourId} />
+        <input type="hidden" name="month" value={month} />
+        <input type="hidden" name="day" value={day} />
+        <label className="pr-dash-field" style={{ maxWidth: "320px" }}>
+          Reason
+          <input name="block_reason" list="pr-close-reasons" placeholder="e.g. river too high" required />
+          <datalist id="pr-close-reasons">
+            {CLOSE_REASONS.map((r) => (
+              <option key={r} value={r} />
+            ))}
+          </datalist>
+        </label>
+        <div className="pr-dash-actions" style={{ marginTop: "6px" }}>
+          <button type="submit" name="mode" value="refund" className="pr-dash-btn pr-dash-btn-danger">
+            Close, cancel &amp; refund {affected.length} booking{affected.length === 1 ? "" : "s"}
+          </button>
+          <button type="submit" name="mode" value="quiet" className="pr-dash-btn pr-dash-btn-ghost">
+            Close quietly (I&apos;ll handle guests)
+          </button>
+          <Link href={backHref} className="pr-dash-btn pr-dash-btn-ghost">Cancel</Link>
+        </div>
+      </form>
     </div>
   );
 }
