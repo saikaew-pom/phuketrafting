@@ -5,6 +5,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { requireStaff } from "@/lib/access";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { addImage, deleteImage, moveImage, updateImageLabel } from "@/lib/queries/images";
+import { setImageTags } from "@/lib/queries/tags";
 import { suggestGalleryCaption } from "@/lib/gallery-ai";
 import { describeAiError } from "@/lib/ai";
 
@@ -123,6 +124,23 @@ export async function updateGalleryCaptionAction(id: string, label: string): Pro
     return { ok: true, error: null };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Couldn't save -- try again." };
+  }
+}
+
+/**
+ * Replaces a photo's tag set with exactly the ids given -- called from
+ * PhotoTags.tsx on every chip click (RPC-style, same reasoning as
+ * updateGalleryCaptionAction: no form-submission error boundary to lean on,
+ * so this must never throw uncaught).
+ */
+export async function setImageTagsAction(id: string, tagIds: string[]): Promise<UpdateResult> {
+  try {
+    await requireStaff();
+    await setImageTags(id, tagIds);
+    revalidateGallery();
+    return { ok: true, error: null };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Couldn't update tags -- try again." };
   }
 }
 

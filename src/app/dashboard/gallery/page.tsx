@@ -1,8 +1,11 @@
+import Link from "next/link";
 import { requireStaff } from "@/lib/access";
 import { listImages } from "@/lib/queries/images";
+import { listTags, getImageTagsBatch } from "@/lib/queries/tags";
 import { cloudinaryUrl } from "@/lib/cloudinary";
 import { GalleryUploadForm } from "@/components/GalleryUploadForm";
 import { EditableCaption } from "@/components/EditableCaption";
+import { PhotoTags } from "@/components/PhotoTags";
 import { removeGalleryImage, moveGalleryImage } from "./actions";
 
 /**
@@ -13,6 +16,7 @@ import { removeGalleryImage, moveGalleryImage } from "./actions";
 export default async function GalleryPage() {
   await requireStaff();
   const images = await listImages("gallery", null);
+  const [allTags, tagsByImage] = await Promise.all([listTags(), getImageTagsBatch(images.map((img) => img.id))]);
 
   return (
     <div>
@@ -36,12 +40,18 @@ export default async function GalleryPage() {
       {images.length > 0 && (
         <div className="pr-dash-card" style={{ marginTop: "16px" }}>
           <h2>{images.length} photo{images.length === 1 ? "" : "s"}</h2>
+          {allTags.length === 0 && (
+            <p className="pr-dash-field-hint" style={{ marginBottom: "10px" }}>
+              No tags yet -- create some on the <Link href="/dashboard/tags">Tags</Link> screen to organize photos.
+            </p>
+          )}
           <div className="pr-dash-tablewrap" style={{ boxShadow: "none" }}>
             <table className="pr-dash-table">
               <thead>
                 <tr>
                   <th></th>
                   <th>Caption</th>
+                  <th>Tags</th>
                   <th>Order</th>
                   <th></th>
                 </tr>
@@ -59,6 +69,13 @@ export default async function GalleryPage() {
                     </td>
                     <td>
                       <EditableCaption imageId={img.id} initialLabel={img.label} />
+                    </td>
+                    <td>
+                      <PhotoTags
+                        imageId={img.id}
+                        allTags={allTags}
+                        initialTagIds={(tagsByImage.get(img.id) ?? []).map((t) => t.id)}
+                      />
                     </td>
                     <td>
                       <div className="pr-dash-actions">
