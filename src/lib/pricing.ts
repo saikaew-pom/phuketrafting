@@ -176,7 +176,37 @@ export async function lookupPromoCode(code: string, tourId: string | null, today
 function applyDiscount(subtotal: number, promo: PromoLookupResult["promo"]): number {
   if (!promo) return 0;
   const raw = promo.discountType === "percent" ? subtotal * (promo.discountValue / 100) : promo.discountValue;
-  return Math.min(raw, subtotal); // never discount below zero
+  // Clamped at BOTH ends, and rounded to whole baht.
+  //
+  // `Math.min(raw, subtotal)` alone did not do what its "never discount below
+  // zero" comment claimed: it caps an over-large discount but passes a
+  // NEGATIVE one straight through, and the caller computes
+  // `total = subtotal - discountAmount + ...` -- so a negative discount is
+  // ADDED. A percent promo stored as -100 on a 4,400 subtotal yielded
+  // raw = -4,400, survived Math.min, and inflated a 5,200 total to 9,600:
+  // the guest overcharged ~85%, with the deposit scaled up to match.
+  // dashboard/promos/actions.ts does reject discountValue <= 0 on the write
+  // side, so this is defence-in-depth rather than a live hole -- but
+  // promo_codes.discount_value carries no CHECK constraint, and this is the
+  // shared chokepoint every price flows through, so it should not depend on
+  // one screen's validation holding.
+  //
+  // Math.round removes ONE source of satang from `total`: percent promos accept
+  // fractional values (33.33%), and splitPayment rounds only the deposit and lets
+  // the balance absorb the remainder -- so an unrounded discount put satang into
+  // balance_amount and rendered "฿1,800.12" as a balance the guest is asked to
+  // pay in cash, in a country with no circulating satang coin.
+  //
+  // This Math.round guards the discount's OWN fraction (a percent promo like
+  // 33.33% on a 4,400 subtotal). It does NOT, on its own, make `total` whole-baht
+  // -- subtotal is built from REAL columns through applyRatePeriod, so a
+  // rate_periods.price_multiplier alone yields e.g. 1300 * 1.15 = 1494.9999999999998.
+  // That "round at the true source" fix now lives at the additive seams in
+  // calculateTourPrice and calculateCampPrice: subtotal, transferFee and
+  // addonsTotal are each rounded to whole baht where they are computed. With those
+  // plus this rounded discount, `total` is already a whole-baht integer by the time
+  // it reaches splitPayment, so no satang can reach balance_amount.
+  return Math.round(Math.max(0, Math.min(raw, subtotal)));
 }
 
 /**
@@ -192,7 +222,13 @@ async function resolveAddons(addonIds: string[] | undefined): Promise<{
   if (!addonIds || addonIds.length === 0) return { addonsTotal: 0, addonsApplied: [] };
   const rows = await getActiveAddonsByIds(addonIds);
   const addonsApplied = rows.map((r) => ({ id: r.id, name: r.name, price: r.price }));
-  const addonsTotal = addonsApplied.reduce((sum, a) => sum + a.price, 0);
+  // Whole baht: addons.price is a REAL column and addonsTotal feeds `total`
+  // directly, so a fractional add-on price would land in balance_amount as a
+  // satang the guest can't pay in cash -- the same defect the rate/fee rounding
+  // in calculate*Price closes. Round the aggregate (not each line -- the per-line
+  // price stays the authoritative catalog value in the booking_addons snapshot),
+  // which is what flows into `total`, keeping `total` a whole-baht integer.
+  const addonsTotal = Math.round(addonsApplied.reduce((sum, a) => sum + a.price, 0));
   return { addonsTotal, addonsApplied };
 }
 
@@ -231,11 +267,39 @@ export async function calculateTourPrice(input: TourPriceInput): Promise<PriceBr
   const adjustedPaidRate = applyRatePeriod(paidRate, period);
   const adjustedFreeRate = applyRatePeriod(freeRate, period);
 
-  const subtotal = (input.adults + input.children) * adjustedPaidRate + input.infants * adjustedFreeRate;
+  // Whole baht at the source. adjustedPaidRate/adjustedFreeRate flow through
+  // applyRatePeriod, which multiplies a base price by rate_periods.price_multiplier
+  // (a REAL column): 1300 * 1.15 = 1494.9999999999998 per paying guest, so a
+  // two-adult subtotal is 2989.9999999999995. Left unrounded, that fraction reaches
+  // `total`, and splitPayment rounds only the deposit while balance_amount absorbs
+  // the remainder -- leaving balance_amount = 2242.9999999999995, a satang cash
+  // amount the guest is asked to pay on the day, in a country with no circulating
+  // satang coin. Round the subtotal aggregate (not each per-person rate) to whole
+  // baht so the amount the guest sees is the amount the discount and split are
+  // computed from.
+  const subtotal = Math.round(
+    (input.adults + input.children) * adjustedPaidRate + input.infants * adjustedFreeRate
+  );
 
+  // is_active = 1, matching listPickupZones -- which is the only thing that
+  // ever offers a zone to a guest. Zones are never deleted, only deactivated
+  // (queries/pickup.ts), so without this filter a retired zone's fee was still
+  // charged and the booking still attached to a pickup route the operator no
+  // longer runs -- landing on the day sheet as a real pickup. Same shape as the
+  // add-on path, which already resolves through getActiveAddonsByIds.
+  //
+  // Math.round for the same whole-baht reason as subtotal above: pickup_zones.fee
+  // is a REAL column and feeds `total` directly, so a fractional fee would put a
+  // satang into balance_amount just as an unrounded multiplier would.
   const transferFee = input.pickupZoneId
-    ? ((await db.prepare("SELECT fee FROM pickup_zones WHERE id = ?1").bind(input.pickupZoneId).first<{ fee: number }>())
-        ?.fee ?? 0)
+    ? Math.round(
+        (
+          await db
+            .prepare("SELECT fee FROM pickup_zones WHERE id = ?1 AND is_active = 1")
+            .bind(input.pickupZoneId)
+            .first<{ fee: number }>()
+        )?.fee ?? 0
+      )
     : 0;
 
   let discountAmount = 0;
@@ -328,6 +392,12 @@ export async function calculateCampPrice(input: CampPriceInput): Promise<PriceBr
     subtotal += WEEKEND_DAYS.has(cursor.getUTCDay()) ? weekendRate : weekdayRate;
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
+  // Whole baht at the source, same as calculateTourPrice: weekdayRate/weekendRate
+  // flow through applyRatePeriod (rate_periods.price_multiplier is REAL), so a
+  // seasonal multiplier makes each night -- and this accumulated sum -- fractional.
+  // Round the subtotal before it flows into the discount and `total`, so no satang
+  // reaches balance_amount as cash the guest can't pay on the day.
+  subtotal = Math.round(subtotal);
 
   let discountAmount = 0;
   let promoApplied: PriceBreakdown["promoApplied"] = null;

@@ -74,11 +74,13 @@ function getStripe(config: StripeConfig): Stripe | null {
 
 /**
  * THB is a 2-decimal currency in Stripe's API: amounts are in satang, so
- * ฿1,667 is 166700. Rounding here is belt-and-braces -- pricing.ts's
- * splitPayment already returns a whole-baht deposit -- but `total` itself is
- * never rounded (a REAL column; a percentage promo can yield ฿4,000.2), so a
- * fractional baht could in principle reach this. Math.round keeps it a valid
- * integer minor unit instead of Stripe rejecting the request outright.
+ * ฿1,667 is 166700 (× 100, not ÷ -- satang is the minor unit). Rounding here is
+ * belt-and-braces: pricing.ts now rounds every additive money component
+ * (subtotal, transferFee, addonsTotal, discount) to whole baht at its source, so
+ * both the deposit splitPayment returns AND the `total` it splits are already
+ * whole-baht integers. Math.round stays as a defensive guard so any future
+ * unrounded caller still yields a valid integer minor unit rather than Stripe
+ * rejecting the request outright.
  */
 export function bahtToSatang(baht: number): number {
   return Math.round(baht * 100);
