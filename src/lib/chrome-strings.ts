@@ -15,7 +15,14 @@ export interface ChromeStringDef {
   en: string;
 }
 
-export const CHROME_STRINGS: readonly ChromeStringDef[] = [
+// NOT annotated `: readonly ChromeStringDef[]`. That annotation widened the
+// literals back to `string` despite the `as const`, so ChromeKey resolved to
+// plain `string` and Record<ChromeKey, string> to Record<string, string> --
+// meaning a typo'd key like strings["nav.book_nwo"] type-checked cleanly and
+// rendered nothing at runtime (or threw on .replaceAll for footer.rated_by).
+// Letting inference keep the literal union is the whole point of the type.
+// `satisfies` still enforces the shape without widening it.
+export const CHROME_STRINGS = [
   { key: "nav.home", en: "Home" },
   { key: "nav.adventures", en: "Adventures" },
   { key: "nav.why", en: "Why us" },
@@ -39,7 +46,7 @@ export const CHROME_STRINGS: readonly ChromeStringDef[] = [
   { key: "footer.terms", en: "Terms" },
   { key: "footer.waiver", en: "Waiver" },
   { key: "footer.rated_by", en: "Rated {rating}★ by {count} travelers" },
-] as const;
+] as const satisfies readonly ChromeStringDef[];
 
 export type ChromeKey = (typeof CHROME_STRINGS)[number]["key"];
 

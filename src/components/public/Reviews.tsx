@@ -13,6 +13,12 @@ export interface ReviewCard {
 }
 
 export function Reviews({ reviews, stats }: { reviews: ReviewCard[]; stats: SiteStats }) {
+  // Same empty guard as FAQ.tsx and Gallery.tsx. Without it, unpublishing the
+  // last review left the homepage rendering the full "Traveler stories /
+  // Loved by N adventurers" header, the 4.9 score and the review count over an
+  // empty grid -- a heading advertising content that isn't there.
+  if (reviews.length === 0) return null;
+
   return (
     <section className="pr-section pr-section-tint" id="reviews">
       <div className="pr-wrap">

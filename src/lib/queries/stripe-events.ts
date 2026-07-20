@@ -37,11 +37,41 @@ export type StripeEventClaim =
   /** Claimed by another delivery that hasn't finished (or died mid-flight). */
   | "in_flight";
 
+/**
+ * How long a claim may sit unprocessed before another delivery may take it over.
+ *
+ * releaseStripeEventClaim() covers a handler that THROWS, but not one that never
+ * returns at all -- an isolate killed by the CPU limit, an eviction, an OOM --
+ * because no catch runs. That left the row claimed with processed_at NULL
+ * forever, so every Stripe retry got "in_flight" -> 409, for the ~3 days Stripe
+ * retries, and then the event was permanently failed. For a
+ * checkout.session.completed that means Stripe captured the deposit, the booking
+ * was never marked paid, the expiry sweeper cancelled it and freed the seat --
+ * the guest paid and has no booking. Worse, the payment_received_after_release
+ * alarm never fires either, because that path needs the handler to actually run.
+ * The only trace was a failed event in Stripe's dashboard.
+ *
+ * Reclaiming is safe here precisely because every effect is already an
+ * idempotent guarded UPDATE (markBookingPaid on awaiting_payment,
+ * markBookingRefunded on paid, releaseUnpaidBooking on UNPAID_GUARD) -- re-running
+ * any of them is a no-op. 900s is far longer than any Worker invocation can
+ * live and far shorter than Stripe's retry horizon, so it can only ever adopt a
+ * genuinely dead claim, never race a live one.
+ */
+const STALE_CLAIM_SECONDS = 900;
+
 export async function claimStripeEvent(id: string, type: string, payload: string): Promise<StripeEventClaim> {
   const result = await getDb()
-    .prepare("INSERT INTO stripe_events (id, type, payload) VALUES (?1, ?2, ?3) ON CONFLICT (id) DO NOTHING")
-    .bind(id, type, payload)
+    .prepare(
+      `INSERT INTO stripe_events (id, type, payload) VALUES (?1, ?2, ?3)
+       ON CONFLICT (id) DO UPDATE
+          SET created_at = unixepoch(), payload = excluded.payload
+        WHERE stripe_events.processed_at IS NULL
+          AND stripe_events.created_at < unixepoch() - ?4`
+    )
+    .bind(id, type, payload, STALE_CLAIM_SECONDS)
     .run();
+  // changes > 0 now means "inserted, or adopted a claim whose owner died".
   if (result.meta.changes > 0) return "claimed";
 
   // Lost the race (or this is a genuine redelivery). "Already in the table" is

@@ -40,8 +40,21 @@ export interface ExpirySweepResult {
  * politeness -- waiting a few minutes past Stripe's expiry before reclaiming,
  * since the checkout.session.expired webhook is the prompt primary path and
  * being slightly late costs nothing while being early is a money bug.
+ *
+ * Raised 300 -> 1800 after review. 300s was the same order of magnitude as
+ * Stripe's own webhook retry backoff, which makes it a real money window rather
+ * than politeness: status/payment_status only move when the webhook lands, and
+ * this route deliberately answers 409 on an in-flight claim to FORCE a retry.
+ * So a guest paying near the deadline whose first delivery fails (deploy, blip)
+ * can be swept before the retry arrives -- the booking is cancelled, its seat
+ * released and resold, and the late webhook then finds nothing to mark paid.
+ * That the webhook already carries a dedicated payment_received_after_release
+ * branch shows this outcome was detected but not prevented. 1800s sits well
+ * past Stripe's early retries while staying far inside the shortest sensible
+ * hold, and the asymmetry the paragraph above states still governs: being late
+ * costs an idle seat for a few minutes, being early costs a paid booking.
  */
-const SWEEP_MARGIN_SECONDS = 300;
+const SWEEP_MARGIN_SECONDS = 1800;
 
 export async function runExpirySweep(env: CloudflareEnv, now: Date = new Date()): Promise<ExpirySweepResult> {
   const db = env.DB;

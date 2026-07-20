@@ -37,18 +37,26 @@ export interface GenerateResult {
  * once, cache in D1, regenerate on demand" architecture: EN is always the
  * fallback if a translation ever looks wrong, and re-running Generate
  * overwrites it.
+ *
+ * requireStaff()/the rate-limit check sit INSIDE the try, same as gallery's
+ * suggestCaptionAction and the blog AI actions. They used to sit outside it, and
+ * TranslationsClient.tsx's handleGenerate awaits this directly with no try of its
+ * own -- so a requireStaff() throw (expired session, deactivated account) was an
+ * unhandled rejection that skipped setBusy(null), leaving the Generate button
+ * disabled on "Generating..." with no error until a reload. requireStaff throws a
+ * plain Error, never redirect(), so catching it swallows no navigation signal.
  */
 export async function generateChromeTranslationsAction(locale: string): Promise<GenerateResult> {
-  const staff = await requireStaff();
-  if (!isSupportedLocale(locale) || locale === DEFAULT_LOCALE) {
-    return { ok: false, error: "Not a translatable locale." };
-  }
-
-  const allowed = await checkRateLimit(`staff-ai:${staff.email}`, 20, 60);
-  if (!allowed) return { ok: false, error: "Too many AI requests -- please wait a minute and try again." };
-
-  const { env } = getCloudflareContext();
   try {
+    const staff = await requireStaff();
+    if (!isSupportedLocale(locale) || locale === DEFAULT_LOCALE) {
+      return { ok: false, error: "Not a translatable locale." };
+    }
+
+    const allowed = await checkRateLimit(`staff-ai:${staff.email}`, 20, 60);
+    if (!allowed) return { ok: false, error: "Too many AI requests -- please wait a minute and try again." };
+
+    const { env } = getCloudflareContext();
     const values = await translateChromeStrings(locale, env);
     if (!values) return { ok: false, error: "AI isn't configured on this environment." };
     await saveChromeTranslations(locale, values);
@@ -70,30 +78,34 @@ export async function generateChromeTranslationsAction(locale: string): Promise<
  *
  * Keys are prefixed per-object in the AI payload and unprefixed on save, so
  * one call can carry all three despite `title` existing in more than one.
+ *
+ * Whole body inside the try, for the reason given on the chrome action above --
+ * and here the prologue also does three D1 reads (getHero/getSections/getSeo),
+ * so a database blip stranded the button exactly like an auth failure did.
  */
 export async function generateHomepageTranslationsAction(locale: string): Promise<GenerateResult> {
-  const staff = await requireStaff();
-  if (!isSupportedLocale(locale) || locale === DEFAULT_LOCALE) {
-    return { ok: false, error: "Not a translatable locale." };
-  }
-
-  const allowed = await checkRateLimit(`staff-ai:${staff.email}`, 20, 60);
-  if (!allowed) return { ok: false, error: "Too many AI requests -- please wait a minute and try again." };
-
-  const [hero, sections, seo] = await Promise.all([getHero(), getSections(), getSeo()]);
-  const groups = [
-    { type: HERO_CONTENT_TYPE, fields: flattenHero(hero) },
-    { type: SECTIONS_CONTENT_TYPE, fields: flattenSections(sections) },
-    { type: SEO_CONTENT_TYPE, fields: flattenSeo(seo) },
-  ];
-
-  const payload: Record<string, string> = {};
-  for (const g of groups) {
-    for (const [key, value] of Object.entries(g.fields)) payload[`${g.type}::${key}`] = value;
-  }
-
-  const { env } = getCloudflareContext();
   try {
+    const staff = await requireStaff();
+    if (!isSupportedLocale(locale) || locale === DEFAULT_LOCALE) {
+      return { ok: false, error: "Not a translatable locale." };
+    }
+
+    const allowed = await checkRateLimit(`staff-ai:${staff.email}`, 20, 60);
+    if (!allowed) return { ok: false, error: "Too many AI requests -- please wait a minute and try again." };
+
+    const [hero, sections, seo] = await Promise.all([getHero(), getSections(), getSeo()]);
+    const groups = [
+      { type: HERO_CONTENT_TYPE, fields: flattenHero(hero) },
+      { type: SECTIONS_CONTENT_TYPE, fields: flattenSections(sections) },
+      { type: SEO_CONTENT_TYPE, fields: flattenSeo(seo) },
+    ];
+
+    const payload: Record<string, string> = {};
+    for (const g of groups) {
+      for (const [key, value] of Object.entries(g.fields)) payload[`${g.type}::${key}`] = value;
+    }
+
+    const { env } = getCloudflareContext();
     const values = await translateContentFields(payload, locale, env);
     if (!values) return { ok: false, error: "AI isn't configured on this environment." };
 

@@ -153,7 +153,18 @@ export async function createTourBooking(input: CreateTourBookingInput): Promise<
   // legitimately record a walk-in onto today's (or a just-run) departure.
   // Returns not_found, which the widget already surfaces as "that date is no
   // longer available". (Audit A7.)
-  if (input.source === "web") {
+  //
+  // Gated on "not staff/agent", NOT on "is web": this read `input.source ===
+  // "web"` and so exempted `chatbot`, `whatsapp` and `ota` too -- every
+  // guest-facing source except the widget. /api/chat/confirm passes
+  // source:"chatbot", and none of the three chatbot layers re-checks the
+  // clock (listAvailableTourSessions has no start_time floor,
+  // runPrepareBooking checks only is_blocked/seats-left), so a guest chatting
+  // at 10:00 could confirm today's 09:00 departure: a real seat consumed on a
+  // trip that had already left, and a deposit charged for it. Enumerating the
+  // exempt sources instead of the checked ones also means a future
+  // BookingSource defaults to being guarded rather than silently exempt.
+  if (input.source !== "staff" && input.source !== "agent") {
     const nowBkk = new Date(Date.now() + 7 * 60 * 60 * 1000);
     const bkkDate = nowBkk.toISOString().slice(0, 10);
     const bkkTime = nowBkk.toISOString().slice(11, 16); // HH:MM, matches start_time's format

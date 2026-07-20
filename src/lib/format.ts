@@ -20,10 +20,19 @@ export function bangkokTodayISO(now: Date = new Date()): string {
   return new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-/** D1 stores timestamps as unixepoch() seconds -- Date expects milliseconds. */
+/**
+ * D1 stores timestamps as unixepoch() seconds -- Date expects milliseconds.
+ *
+ * timeZone is explicit for the same reason bangkokTodayISO() above exists: with
+ * no timeZone, toLocaleString uses the HOST zone, and Cloudflare Workers run in
+ * UTC. A blog post published 02:30 Bangkok rendered its public date as the
+ * previous day ("Jul 20, 7:30 PM" for what was Jul 21, 2:30 AM locally), and
+ * every /dashboard timestamp was 7 hours behind the business day staff work in.
+ */
 export function formatDateTime(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toLocaleString("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: "Asia/Bangkok",
   });
 }

@@ -26,6 +26,19 @@ export interface SessionTemplate {
   is_active: number;
 }
 
+/**
+ * The block_reason stamped on departures retired because their weekly slot was
+ * switched off or deleted -- and the exact string restoreFutureBlockedForSlot
+ * matches to undo that.
+ *
+ * A shared constant rather than two literals because the block/restore pair only
+ * works if they agree character-for-character: drift would silently strand every
+ * retired departure as unreopenable, which is the same class of silent failure
+ * this whole mechanism exists to avoid. It is also staff-visible text -- the
+ * availability calendar renders block_reason -- so it reads as a sentence.
+ */
+export const SLOT_RETIRED_BLOCK_REASON = "Slot removed from schedule";
+
 export async function listSessionTemplates(tourId: string): Promise<SessionTemplate[]> {
   const { results } = await getDb()
     .prepare(
@@ -87,20 +100,87 @@ export async function applyCapacityToFutureEmpty(
 }
 
 /**
- * Remove future EMPTY departures for a slot that was turned off or deleted, so
+ * Retire future EMPTY departures for a slot that was turned off or deleted, so
  * the schedule change takes effect. A departure with bookings or a manual block
  * survives (it isn't the generator's to remove).
+ *
+ * BLOCKS rather than DELETEs, despite "empty" in the predicate. `booked_count =
+ * 0` does NOT mean "no row references this session":
+ *
+ *   - bookings.tour_session_id (0005) has no ON DELETE clause, and a CANCELLED
+ *     booking keeps its tour_session_id forever -- nothing ever nulls it -- while
+ *     booked_count has already returned to 0.
+ *   - chat_booking_drafts.tour_session_id (0014) is NOT NULL and drafts are only
+ *     ever marked consumed_at, never deleted.
+ *
+ * So a DELETE here raised FOREIGN KEY constraint failed (reproduced against a
+ * copy of the real local D1: one cancelled booking, or one consumed chat draft,
+ * turned a clean 17-row delete into 0 rows and a throw). Because D1 has no
+ * cross-call transaction, the caller's preceding updateSessionTemplateActive
+ * had already committed -- so the schedule screen showed the slot OFF while all
+ * ~17 future departures stayed is_blocked = 0 and kept being returned by
+ * listAvailableTourSessions. Guests went on booking a departure the operator had
+ * decided not to run, staff had no signal, and every retry failed identically.
+ *
+ * Blocking is also what the rest of the app already argues for -- see
+ * availability/actions.ts: "deleting the row would orphan any booking already on
+ * it". The generator cannot resurrect these: the template is inactive, and its
+ * ON CONFLICT DO NOTHING can never unblock an existing row.
+ *
+ * Named "block", not "remove": the old name is exactly the assumption that broke
+ * the re-enable path (whoever wrote it believed the rows were gone, so turning a
+ * slot back on only had to regenerate). restoreFutureBlockedForSlot below is its
+ * inverse and every caller that re-enables a slot must pair the two.
  */
-export async function removeFutureEmptyForSlot(tourId: string, weekday: number, startTime: string): Promise<number> {
+export async function blockFutureEmptyForSlot(tourId: string, weekday: number, startTime: string): Promise<number> {
   const today = bangkokTodayISO();
   const res = await getDb()
     .prepare(
-      `DELETE FROM tour_sessions
+      `UPDATE tour_sessions
+          SET is_blocked = 1, block_reason = ?5, updated_at = unixepoch()
         WHERE tour_id = ?1 AND start_time = ?2 AND date >= ?3
           AND CAST(strftime('%w', date) AS INTEGER) = ?4
           AND booked_count = 0 AND is_blocked = 0 AND allotment_hold = 0`
     )
-    .bind(tourId, startTime, today, weekday)
+    .bind(tourId, startTime, today, weekday, SLOT_RETIRED_BLOCK_REASON)
+    .run();
+  return res.meta.changes ?? 0;
+}
+
+/**
+ * Inverse of blockFutureEmptyForSlot: reopens the future departures THIS module
+ * retired, for a slot that is being turned back on (or re-added).
+ *
+ * Required because blocking replaced deleting. Under the old DELETE, re-enabling
+ * a slot was self-healing -- the rows were gone, so generateSessions() simply
+ * recreated them open. Blocked rows survive, and neither reconciler can clear
+ * them: applyCapacityToFutureEmpty carries `is_blocked = 0` in its WHERE, and the
+ * generator's ON CONFLICT(id) DO NOTHING cannot touch a row that already exists.
+ * Verified: OFF then ON left all future departures is_blocked = 1 and
+ * listAvailableTourSessions returning zero, with the schedule screen showing the
+ * slot ON -- a silent supply outage.
+ *
+ * Matched on SLOT_RETIRED_BLOCK_REASON, not merely `is_blocked = 1`. That is the
+ * load-bearing part: a departure closed by a human (availability/actions.ts
+ * writes a staff-supplied reason) is a decision this must never overturn, so the
+ * sentinel is the only thing that distinguishes "we retired this because the
+ * slot was off" from "someone closed this date on purpose".
+ */
+export async function restoreFutureBlockedForSlot(
+  tourId: string,
+  weekday: number,
+  startTime: string
+): Promise<number> {
+  const today = bangkokTodayISO();
+  const res = await getDb()
+    .prepare(
+      `UPDATE tour_sessions
+          SET is_blocked = 0, block_reason = NULL, updated_at = unixepoch()
+        WHERE tour_id = ?1 AND start_time = ?2 AND date >= ?3
+          AND CAST(strftime('%w', date) AS INTEGER) = ?4
+          AND is_blocked = 1 AND block_reason = ?5`
+    )
+    .bind(tourId, startTime, today, weekday, SLOT_RETIRED_BLOCK_REASON)
     .run();
   return res.meta.changes ?? 0;
 }

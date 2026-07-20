@@ -125,7 +125,7 @@ const BookingSchema = z.object({
   children: z.coerce.number().int().min(0).max(20),
   infants: z.coerce.number().int().min(0).max(20),
   guestName: z.string().trim().min(2, "Please enter your name.").max(120),
-  guestEmail: z.string().trim().email("Please enter a valid email address.").optional().or(z.literal("")),
+  guestEmail: z.string().trim().max(254, "That email address is too long.").email("Please enter a valid email address.").optional().or(z.literal("")),
   guestPhone: z.string().trim().max(40).optional().default(""),
   pickupZoneId: z.string().trim().optional().or(z.literal("")),
   hotel: z.string().trim().max(200).optional().default(""),

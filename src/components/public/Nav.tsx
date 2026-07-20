@@ -50,10 +50,15 @@ export function Nav({
       <div className="pr-nav-inner">
         <a href={hrefFor("#top")} className="pr-brand">
           {logo.imageId ? (
-            // eslint-disable-next-line @next/next/no-img-element -- logo aspect
-            // ratio is unknown (admin upload); a plain <img> sized by CSS height
-            // avoids next/image's required width/height. Cloudinary negotiates
-            // format/quality via cloudinaryUrl.
+            // Logo aspect ratio is unknown (admin upload); a plain <img> sized
+            // by CSS height avoids next/image's required width/height.
+            // Cloudinary negotiates format/quality via cloudinaryUrl.
+            //
+            // The disable must be the LAST line before the <img>: it was above
+            // this prose, so "next line" resolved to a comment and the
+            // suppression did nothing -- eslint reported both an unused
+            // directive and the unsuppressed warning it was meant to cover.
+            // eslint-disable-next-line @next/next/no-img-element
             <img className="pr-brand-logo" src={cloudinaryUrl(logo.imageId, 240)} alt={`${logo.wordOne} ${logo.wordTwo}`} />
           ) : (
             <span className="pr-brand-name">

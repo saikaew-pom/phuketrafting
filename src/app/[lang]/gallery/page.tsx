@@ -3,6 +3,7 @@ import Link from "next/link";
 import { listImages } from "@/lib/queries/images";
 import { listTags, listImagesByTagSlug } from "@/lib/queries/tags";
 import { Gallery } from "@/components/public/Gallery";
+import { GALLERY } from "@/lib/content";
 import { BUSINESS_NAME, SITE_URL } from "@/lib/site";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from "@/lib/i18n";
 
@@ -52,7 +53,21 @@ export default async function GalleryPage({
 
   const [allTags, images] = await Promise.all([listTags(), tag ? listImagesByTagSlug(tag) : listImages("gallery", null)]);
   const activeTag = tag ? (allTags.find((t) => t.slug === tag) ?? null) : null;
-  const items = images.map((g) => ({ publicId: g.image_id, label: g.label ?? "" }));
+
+  // Falls back to the hardcoded launch set exactly like the homepage does
+  // ([lang]/page.tsx), and for the same reason -- otherwise the two disagree in
+  // the state the site is actually in today (product_images is empty): the
+  // homepage renders six photos while this page, linked from the footer on
+  // every page, renders "Photos are on their way". Since this route is
+  // index: true and listed in sitemap.ts, that empty page also gets crawled.
+  //
+  // Only the UNFILTERED branch falls back. A tag-filtered view that genuinely
+  // matches nothing must stay empty -- showing untagged launch photos under
+  // "Photos tagged X" would be a wrong answer rather than a graceful one.
+  const items =
+    images.length > 0 || tag
+      ? images.map((g) => ({ publicId: g.image_id, label: g.label ?? "" }))
+      : GALLERY.map((g) => ({ publicId: g.publicId, label: g.label }));
 
   return (
     <div>

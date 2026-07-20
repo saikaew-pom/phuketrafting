@@ -249,7 +249,15 @@ export async function claimCampUnitBooking(params: {
       `INSERT INTO bookings (${columns.join(", ")})
        SELECT ${columns.map(() => "?").join(", ")}
         WHERE EXISTS (
-          SELECT 1 FROM camp_units u WHERE u.id = ? AND u.is_blocked = 0
+          -- is_active AND is_blocked, matching listAvailableCampUnits exactly.
+          -- The guarded INSERT exists to close the gap between "the guest saw
+          -- this unit in the list" and "the guest submitted", and it closed that
+          -- gap for is_blocked while missing is_active -- so a unit retired
+          -- mid-session (unticking Active is the documented way to retire a
+          -- tent, see queries/camping.ts) vanished from the list but could still
+          -- be claimed from an already-open tab or a direct POST. The guest was
+          -- charged and would arrive to a tent that no longer exists.
+          SELECT 1 FROM camp_units u WHERE u.id = ? AND u.is_active = 1 AND u.is_blocked = 0
         )
         AND NOT EXISTS (
           SELECT 1 FROM bookings b
@@ -268,11 +276,18 @@ export async function claimCampUnitBooking(params: {
   // claimTourSessionCapacity: this read-after-write is diagnostic only (not
   // used to decide anything -- `success` above was already decided by the
   // one atomic guarded statement).
+  // Reads is_active as well as is_blocked, so it can explain every rejection the
+  // guarded INSERT above can now produce. Without the is_active arm a RETIRED
+  // unit fell through to "no_capacity", which camp-booking-actions.ts renders as
+  // "that campsite just got booked" -- a specific claim about another guest that
+  // is simply untrue for a tent the operator withdrew. A retired unit is the
+  // same fact as a missing one from the guest's side, so it reports not_found
+  // ("no longer available"); CapacityFailureReason needs no new member.
   const unit = await db
-    .prepare("SELECT is_blocked FROM camp_units WHERE id = ?1")
+    .prepare("SELECT is_active, is_blocked FROM camp_units WHERE id = ?1")
     .bind(params.campUnitId)
-    .first<{ is_blocked: number }>();
-  if (!unit) return { success: false, reason: "not_found" };
+    .first<{ is_active: number; is_blocked: number }>();
+  if (!unit || !unit.is_active) return { success: false, reason: "not_found" };
   if (unit.is_blocked) return { success: false, reason: "blocked" };
   return { success: false, reason: "no_capacity" };
 }

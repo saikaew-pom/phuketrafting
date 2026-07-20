@@ -11,7 +11,7 @@ import { isSupportedLocale, DEFAULT_LOCALE } from "@/lib/i18n";
 
 const EnquirySchema = z.object({
   name: z.string().trim().min(2, "Please enter your name.").max(120),
-  email: z.string().trim().email("Please enter a valid email address."),
+  email: z.string().trim().max(254, "That email address is too long.").email("Please enter a valid email address."),
   phone: z.string().trim().max(40).optional().default(""),
   message: z.string().trim().min(10, "Please tell us a bit more (10 characters minimum).").max(2000),
   locale: z.string(),

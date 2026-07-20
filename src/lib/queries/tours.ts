@@ -131,7 +131,17 @@ export async function deleteTour(id: string): Promise<"ok" | "blocked"> {
           EXISTS (SELECT 1 FROM tour_sessions WHERE tour_id = ?1)
        OR EXISTS (SELECT 1 FROM session_templates WHERE tour_id = ?1)
        OR EXISTS (SELECT 1 FROM promo_codes WHERE scope_tour_id = ?1)
-       OR EXISTS (SELECT 1 FROM reviews WHERE tour_id = ?1)`
+       OR EXISTS (SELECT 1 FROM reviews WHERE tour_id = ?1)
+       -- availability_audit.tour_id (migration 0019) landed after this list was
+       -- written and was never added to it. It has no ON DELETE clause, so it
+       -- blocks the DELETE below exactly like the others: a tour whose sessions
+       -- and templates have all been removed, but which was once the subject of
+       -- one bulk availability operation, passed this check and then threw
+       -- FOREIGN KEY constraint failed inside the batch. deleteTourAction has no
+       -- try/catch, so staff got dashboard/error.tsx's opaque digest instead of
+       -- the has_activity banner this function exists to produce, and the tour
+       -- was undeletable with no stated reason.
+       OR EXISTS (SELECT 1 FROM availability_audit WHERE tour_id = ?1)`
     )
     .bind(id)
     .first();

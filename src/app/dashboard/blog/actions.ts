@@ -7,6 +7,7 @@ import { requireStaff } from "@/lib/access";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { createPost, updatePost, deletePost, getPostBySlug, isBlogCategory, type BlogPostInput } from "@/lib/queries/blog";
 import { generateBlogDraft, generateBlogExcerpt } from "@/lib/blog-ai";
+import { describeAiError } from "@/lib/ai";
 import { DEFAULT_LOCALE } from "@/lib/i18n";
 
 function slugify(value: string): string {
@@ -161,35 +162,52 @@ async function assertStaffAiAllowed(email: string): Promise<AiResult | null> {
   return allowed ? null : { text: null, error: "Too many AI requests -- please wait a minute and try again." };
 }
 
+// Both actions below wrap requireStaff()/the rate-limit check INSIDE the try,
+// and report through describeAiError -- matching gallery/actions.ts's
+// suggestCaptionAction, which fixed the identical pair of bugs after confirming
+// them live:
+//
+//  1. requireStaff() outside the try escaped uncaught (confirmed live there by
+//     deactivating the signed-in staff row mid-session). BlogEditorClient awaits
+//     these directly with no try of its own, so the rejection meant
+//     setDraftBusy(false) never ran -- and because both AI buttons share
+//     disabled={draftBusy || excerptBusy}, BOTH went permanently dead on
+//     "Writing...", with no error shown. Only a reload recovered, and the reload
+//     discards the unsaved draft that useActionState exists to preserve.
+//  2. err.message on an Anthropic APIError IS the vendor's raw HTTP response
+//     body -- status, error type, request_id -- so an ordinary MiniMax quota 429
+//     rendered raw provider JSON in the dashboard. describeAiError turns that
+//     into the intended plain-language message and falls through to err.message
+//     for non-APIErrors, so one catch still covers both classes.
 export async function generateDraftAction(title: string, category: string): Promise<AiResult> {
-  const staff = await requireStaff();
-  const limited = await assertStaffAiAllowed(staff.email);
-  if (limited) return limited;
-  if (!title.trim()) return { text: null, error: "Enter a title first." };
-  if (!isBlogCategory(category)) return { text: null, error: "Choose a category first." };
-
-  const { env } = getCloudflareContext();
   try {
+    const staff = await requireStaff();
+    const limited = await assertStaffAiAllowed(staff.email);
+    if (limited) return limited;
+    if (!title.trim()) return { text: null, error: "Enter a title first." };
+    if (!isBlogCategory(category)) return { text: null, error: "Choose a category first." };
+
+    const { env } = getCloudflareContext();
     const text = await generateBlogDraft(title, category, env);
     if (!text) return { text: null, error: "AI isn't configured on this environment." };
     return { text, error: null };
   } catch (err) {
-    return { text: null, error: err instanceof Error ? err.message : "AI generation failed." };
+    return { text: null, error: describeAiError(err) };
   }
 }
 
 export async function generateExcerptAction(body: string): Promise<AiResult> {
-  const staff = await requireStaff();
-  const limited = await assertStaffAiAllowed(staff.email);
-  if (limited) return limited;
-  if (!body.trim()) return { text: null, error: "Write (or generate) the article body first." };
-
-  const { env } = getCloudflareContext();
   try {
+    const staff = await requireStaff();
+    const limited = await assertStaffAiAllowed(staff.email);
+    if (limited) return limited;
+    if (!body.trim()) return { text: null, error: "Write (or generate) the article body first." };
+
+    const { env } = getCloudflareContext();
     const text = await generateBlogExcerpt(body, env);
     if (!text) return { text: null, error: "AI isn't configured on this environment." };
     return { text, error: null };
   } catch (err) {
-    return { text: null, error: err instanceof Error ? err.message : "AI generation failed." };
+    return { text: null, error: describeAiError(err) };
   }
 }
