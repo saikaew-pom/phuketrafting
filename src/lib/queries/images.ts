@@ -64,6 +64,11 @@ export async function addImage(
     .run();
 }
 
+/** Overwrites an image's caption/alt text. */
+export async function updateImageLabel(id: string, label: string | null): Promise<void> {
+  await getDb().prepare("UPDATE product_images SET label = ?1 WHERE id = ?2").bind(label, id).run();
+}
+
 /** Removes one image. Returns whether a row was actually deleted. */
 export async function deleteImage(id: string): Promise<boolean> {
   const result = await getDb().prepare("DELETE FROM product_images WHERE id = ?1").bind(id).run();

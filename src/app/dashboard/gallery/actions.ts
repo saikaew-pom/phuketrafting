@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { requireStaff } from "@/lib/access";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { addImage, deleteImage, moveImage } from "@/lib/queries/images";
+import { addImage, deleteImage, moveImage, updateImageLabel } from "@/lib/queries/images";
 import { suggestGalleryCaption } from "@/lib/gallery-ai";
 import { describeAiError } from "@/lib/ai";
 
@@ -86,6 +86,46 @@ export async function moveGalleryImage(id: string, direction: "up" | "down"): Pr
   revalidateGallery();
 }
 
+export interface UpdateResult {
+  ok: boolean;
+  error: string | null;
+}
+
+// Matches EditableCaption.tsx's <input maxLength={120}>. That attribute is
+// purely advisory (HTML-level, client-only) -- same "bypassable via a direct
+// call" gap bookings/actions.ts's FIELD_MAX_LENGTHS/parseBoundedText exists to
+// close for its own form fields (see that file: "a raw POST with a 5,000-char
+// hotel field was accepted with zero rejection before this"). This is an
+// RPC-style call with a single free-text argument, not a <form>'s FormData, so
+// there's no field-name-keyed table to route it through -- a direct bound
+// does the same job for the one field this action writes.
+const MAX_CAPTION_LENGTH = 120;
+
+/**
+ * Renames an already-saved photo's caption. Called directly from
+ * EditableCaption.tsx (RPC-style, not a <form action>) so the client can show
+ * a "Saved" confirmation without a full page reload -- same shape as
+ * suggestCaptionAction below. Wrapped in try/catch (unlike removeGalleryImage/
+ * moveGalleryImage, which are plain <form action>s and let Next's error
+ * boundary handle a throw): an RPC call awaited directly in an onClick handler
+ * has no such boundary, so an unhandled rejection here would just be a silent
+ * console error with no UI feedback.
+ */
+export async function updateGalleryCaptionAction(id: string, label: string): Promise<UpdateResult> {
+  try {
+    await requireStaff();
+    const trimmed = label.trim();
+    if (trimmed.length > MAX_CAPTION_LENGTH) {
+      return { ok: false, error: `Caption is too long (max ${MAX_CAPTION_LENGTH} characters).` };
+    }
+    await updateImageLabel(id, trimmed || null);
+    revalidateGallery();
+    return { ok: true, error: null };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Couldn't save -- try again." };
+  }
+}
+
 export interface AiResult {
   text: string | null;
   error: string | null;
@@ -102,21 +142,32 @@ export interface AiResult {
  * every staff-AI feature, not per-feature (Audit A25's original reasoning).
  */
 export async function suggestCaptionAction(hint: string): Promise<AiResult> {
-  const staff = await requireStaff();
-  const allowed = await checkRateLimit(`staff-ai:${staff.email}`, 20, 60);
-  if (!allowed) return { text: null, error: "Too many AI requests -- please wait a minute and try again." };
-  if (!hint.trim()) return { text: null, error: "Type a short hint about the photo first." };
-
-  const { env } = getCloudflareContext();
   try {
+    const staff = await requireStaff();
+    const allowed = await checkRateLimit(`staff-ai:${staff.email}`, 20, 60);
+    if (!allowed) return { text: null, error: "Too many AI requests -- please wait a minute and try again." };
+    if (!hint.trim()) return { text: null, error: "Type a short hint about the photo first." };
+
+    const { env } = getCloudflareContext();
     const text = await suggestGalleryCaption(hint, env);
     if (!text) return { text: null, error: "AI isn't configured on this environment." };
     return { text, error: null };
   } catch (err) {
-    // describeAiError, not raw err.message: an Anthropic APIError's message
-    // IS the vendor's raw HTTP response body (status, error type, request_id)
-    // -- confirmed live via a real MiniMax 429, which this used to show
-    // staff verbatim. See lib/ai.ts's describeAiError for the full story.
+    // The try/catch now wraps requireStaff()/the rate-limit check too, not
+    // just the AI call -- requireStaff() throwing (expired/invalid session,
+    // deactivated account) used to escape this function uncaught. Every
+    // RPC-style caller (EditableCaption.tsx, MultiImageUploadField.tsx) awaits
+    // this directly with no try/catch of its own, so that unhandled rejection
+    // had nowhere to go: their "suggesting" flag never got cleared, leaving
+    // the Suggest button stuck on "Writing..." forever with zero feedback.
+    // Confirmed live by deactivating the signed-in staff row mid-session and
+    // clicking Suggest -- this action 500'd and the button hung with no error
+    // shown. describeAiError, not raw err.message: an Anthropic APIError's
+    // message IS the vendor's raw HTTP response body (status, error type,
+    // request_id) -- confirmed live via a real MiniMax 429, which this used to
+    // show staff verbatim. See lib/ai.ts's describeAiError for the full story;
+    // it already falls back to a plain err.message for any non-APIError (e.g.
+    // requireStaff()'s), so one catch correctly covers both failure classes.
     return { text: null, error: describeAiError(err) };
   }
 }

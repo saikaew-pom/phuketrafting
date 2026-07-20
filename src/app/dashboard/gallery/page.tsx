@@ -2,6 +2,7 @@ import { requireStaff } from "@/lib/access";
 import { listImages } from "@/lib/queries/images";
 import { cloudinaryUrl } from "@/lib/cloudinary";
 import { GalleryUploadForm } from "@/components/GalleryUploadForm";
+import { EditableCaption } from "@/components/EditableCaption";
 import { removeGalleryImage, moveGalleryImage } from "./actions";
 
 /**
@@ -56,7 +57,9 @@ export default async function GalleryPage() {
                         style={{ width: "80px", height: "56px", objectFit: "cover", borderRadius: "6px" }}
                       />
                     </td>
-                    <td>{img.label || <span className="pr-dash-field-hint">(no caption)</span>}</td>
+                    <td>
+                      <EditableCaption imageId={img.id} initialLabel={img.label} />
+                    </td>
                     <td>
                       <div className="pr-dash-actions">
                         <form action={moveGalleryImage.bind(null, img.id, "up")}>
