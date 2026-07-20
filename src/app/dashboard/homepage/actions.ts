@@ -13,6 +13,13 @@ import {
   writeSeo,
   getSeo,
 } from "@/lib/queries/settings";
+import { markTranslationsStale } from "@/lib/queries/translations";
+import {
+  HERO_CONTENT_TYPE,
+  SECTIONS_CONTENT_TYPE,
+  SEO_CONTENT_TYPE,
+  GLOBAL_CONTENT_ID,
+} from "@/lib/translatable-content";
 
 /** Blank -> keep the current stored value (backstop: the getter's per-field default). */
 function pick(formData: FormData, name: string, fallback: string): string {
@@ -52,9 +59,15 @@ export async function saveHomepage(formData: FormData): Promise<void> {
     staff.email
   );
 
+  // Cached TH/RU/ZH translations now describe the OLD English copy. Flagged,
+  // not deleted, so the site keeps rendering them until staff regenerate --
+  // see markTranslationsStale.
+  await markTranslationsStale(HERO_CONTENT_TYPE, GLOBAL_CONTENT_ID);
+
   // The hero renders on the landing page (app/[lang]/page.tsx).
   revalidatePath("/[lang]", "page");
   revalidatePath("/dashboard/homepage");
+  revalidatePath("/dashboard/translations");
   redirect("/dashboard/homepage?saved=1");
 }
 
@@ -97,10 +110,13 @@ export async function saveSections(formData: FormData): Promise<void> {
     staff.email
   );
 
+  await markTranslationsStale(SECTIONS_CONTENT_TYPE, GLOBAL_CONTENT_ID);
+
   // These render on the landing page (bands) AND the footer (strapline, in the
   // shared [lang] layout) -- revalidate the whole public tree.
   revalidatePath("/[lang]", "layout");
   revalidatePath("/dashboard/homepage");
+  revalidatePath("/dashboard/translations");
   redirect("/dashboard/homepage?saved=1#sections");
 }
 
@@ -118,7 +134,10 @@ export async function saveSeo(formData: FormData): Promise<void> {
     staff.email
   );
 
+  await markTranslationsStale(SEO_CONTENT_TYPE, GLOBAL_CONTENT_ID);
+
   revalidatePath("/[lang]", "page");
   revalidatePath("/dashboard/homepage");
+  revalidatePath("/dashboard/translations");
   redirect("/dashboard/homepage?saved=1#seo");
 }

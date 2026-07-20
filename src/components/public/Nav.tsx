@@ -6,6 +6,7 @@ import { MessageCircle, Menu, X } from "lucide-react";
 import { waLink } from "@/lib/whatsapp";
 import { cloudinaryUrl } from "@/lib/cloudinary";
 import type { Logo } from "@/lib/queries/settings";
+import type { ChromeKey } from "@/lib/chrome-strings";
 
 // The sections these anchor to only exist on the landing page. On any other
 // page under [lang] (blog, manage, privacy...) a bare "#tours" points at
@@ -13,15 +14,23 @@ import type { Logo } from "@/lib/queries/settings";
 // when we're NOT on the landing page, so they navigate home and then scroll;
 // on the landing page they stay bare hashes to keep the in-page smooth scroll.
 // (Audit A27.)
-const LINKS = [
-  { hash: "#top", label: "Home" },
-  { hash: "#tours", label: "Adventures" },
-  { hash: "#why", label: "Why us" },
-  { hash: "#reviews", label: "Reviews" },
-  { hash: "#faq", label: "FAQ" },
+const LINKS: { hash: string; key: ChromeKey }[] = [
+  { hash: "#top", key: "nav.home" },
+  { hash: "#tours", key: "nav.adventures" },
+  { hash: "#why", key: "nav.why" },
+  { hash: "#reviews", key: "nav.reviews" },
+  { hash: "#faq", key: "nav.faq" },
 ];
 
-export function Nav({ locale, logo }: { locale: string; logo: Logo }) {
+export function Nav({
+  locale,
+  logo,
+  strings,
+}: {
+  locale: string;
+  logo: Logo;
+  strings: Record<ChromeKey, string>;
+}) {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -55,7 +64,7 @@ export function Nav({ locale, logo }: { locale: string; logo: Logo }) {
         <nav className="pr-nav-links">
           {LINKS.map((l) => (
             <a key={l.hash} href={hrefFor(l.hash)}>
-              {l.label}
+              {strings[l.key]}
             </a>
           ))}
         </nav>
@@ -66,15 +75,15 @@ export function Nav({ locale, logo }: { locale: string; logo: Logo }) {
             target="_blank"
             rel="noreferrer"
           >
-            <MessageCircle size={17} className="pr-ico" /> <span>WhatsApp</span>
+            <MessageCircle size={17} className="pr-ico" /> <span>{strings["nav.whatsapp"]}</span>
           </a>
           {/* #top = the hero's booking form. It pointed at #book, which is the
               closing CTA section, not the form -- so "Book now" scrolled past
               the booking widget to a different button. */}
           <a className="pr-btn pr-btn-accent" href={hrefFor("#top")}>
-            Book now
+            {strings["nav.book_now"]}
           </a>
-          <button className="pr-nav-burger" onClick={() => setOpen(!open)} aria-label="Menu">
+          <button className="pr-nav-burger" onClick={() => setOpen(!open)} aria-label={strings["nav.menu_aria"]}>
             {open ? <X size={22} className="pr-ico" /> : <Menu size={22} className="pr-ico" />}
           </button>
         </div>
@@ -83,7 +92,7 @@ export function Nav({ locale, logo }: { locale: string; logo: Logo }) {
         <div className="pr-nav-mobile">
           {LINKS.map((l) => (
             <a key={l.hash} href={hrefFor(l.hash)} onClick={() => setOpen(false)}>
-              {l.label}
+              {strings[l.key]}
             </a>
           ))}
         </div>

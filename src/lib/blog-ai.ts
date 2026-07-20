@@ -1,4 +1,4 @@
-import { aiComplete, type AiConfig } from "@/lib/ai";
+import { aiComplete, requireCompleteText, type AiConfig } from "@/lib/ai";
 import { listTours, getTourRates } from "@/lib/queries/tours";
 import { listCampZones, getCampRates } from "@/lib/queries/camping";
 import { categoryLabel } from "@/lib/queries/blog";
@@ -76,22 +76,6 @@ ${GUARDRAILS}
 Return ONLY the markdown body, nothing else -- no title, no explanation before or after.`;
 
 const EXCERPT_SYSTEM = `You are writing a short excerpt/teaser for a blog post, shown on the blog index page. You are given the full article body. Write exactly 1-2 plain-English sentences (no markdown, no HTML) summarizing what the post covers, in an inviting but honest tone -- not clickbait. Return ONLY the excerpt text, nothing else.`;
-
-/**
- * Both throw on a real API failure or a cut-off response -- unlike the guest
- * chatbot (which must always show SOMETHING), this fills a form a human is
- * about to review, so a clear "try again" is better than silently saving a
- * response that stopped mid-sentence.
- */
-function requireCompleteText(text: string, stopReason: string | null): string {
-  if (stopReason === "max_tokens") {
-    throw new Error("The AI response was cut off before finishing. Try again, or shorten the title/topic.");
-  }
-  if (!text) {
-    throw new Error("The AI didn't return any text. Try again.");
-  }
-  return text;
-}
 
 export async function generateBlogDraft(title: string, category: string, config: AiConfig): Promise<string | null> {
   const facts = await buildFactsBlock();

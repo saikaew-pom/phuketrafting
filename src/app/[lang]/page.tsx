@@ -8,10 +8,20 @@ import { listImages } from "@/lib/queries/images";
 import { listActiveFaqs } from "@/lib/queries/faqs";
 import { listActiveAddons } from "@/lib/queries/addons";
 import { getSiteStats, getHero, getSections, getSeo } from "@/lib/queries/settings";
+import { getTranslationMap } from "@/lib/queries/translations";
+import {
+  mergeHero,
+  mergeSections,
+  mergeSeo,
+  HERO_CONTENT_TYPE,
+  SECTIONS_CONTENT_TYPE,
+  SEO_CONTENT_TYPE,
+  GLOBAL_CONTENT_ID,
+} from "@/lib/translatable-content";
 import { cloudinaryUrl } from "@/lib/cloudinary";
 import { GALLERY } from "@/lib/content";
 import { SITE_URL, BUSINESS_NAME } from "@/lib/site";
-import { SUPPORTED_LOCALES, DEFAULT_LOCALE } from "@/lib/i18n";
+import { SUPPORTED_LOCALES, DEFAULT_LOCALE, isSupportedLocale } from "@/lib/i18n";
 import { serializeJsonLd, buildOrganizationJsonLd, buildProductsJsonLd, buildFaqJsonLd } from "@/lib/jsonld";
 import { Hero } from "@/components/public/Hero";
 import { TrustBar } from "@/components/public/TrustBar";
@@ -34,16 +44,17 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
   const canonical = `${SITE_URL}/${lang}`;
-  // Staff-editable meta (homepage CMS stage 3). Defaults reproduce the previous
+  // Staff-editable meta (homepage CMS stage 3), overlaid with this locale's
+  // cached translation where one exists. Defaults reproduce the previous
   // hardcoded values, so an unset row keeps today's SEO exactly.
-  const seo = await getSeo();
+  const seoEn = await getSeo();
+  const seo = isSupportedLocale(lang)
+    ? mergeSeo(seoEn, await getTranslationMap(SEO_CONTENT_TYPE, GLOBAL_CONTENT_ID, lang))
+    : seoEn;
   const heroImage = cloudinaryUrl(seo.shareImageId, 1200);
 
   // Reciprocal hreflang: every locale variant points at every other, plus
-  // an x-default fallback. All four locales render today (identical EN
-  // copy on TH/ZH/RU until real translations land -- see [lang]/layout.tsx),
-  // so this is honest: the URLs really do resolve, even if not yet in the
-  // visitor's language.
+  // an x-default fallback.
   const languages = Object.fromEntries(SUPPORTED_LOCALES.map((locale) => [locale, `${SITE_URL}/${locale}`]));
   languages["x-default"] = `${SITE_URL}/${DEFAULT_LOCALE}`;
 
@@ -87,8 +98,18 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
     listImages("gallery", null),
   ]);
   const siteStats = await getSiteStats();
-  const hero = await getHero();
-  const sections = await getSections();
+  // EN is canonical; this locale's cached translation is overlaid per-field, so
+  // a missing or partly-generated translation renders English rather than a
+  // blank band (same contract as getChromeStrings and settings.ts's getters).
+  const heroEn = await getHero();
+  const sectionsEn = await getSections();
+  const locale = isSupportedLocale(lang) ? lang : DEFAULT_LOCALE;
+  const [heroT, sectionsT] = await Promise.all([
+    getTranslationMap(HERO_CONTENT_TYPE, GLOBAL_CONTENT_ID, locale),
+    getTranslationMap(SECTIONS_CONTENT_TYPE, GLOBAL_CONTENT_ID, locale),
+  ]);
+  const hero = mergeHero(heroEn, heroT);
+  const sections = mergeSections(sectionsEn, sectionsT);
   const faqRows = await listActiveFaqs();
   // Priced add-ons (migration 0018), shown as tick-boxes in both booking
   // widgets. The widget sends only the ticked ids; price/name are re-resolved

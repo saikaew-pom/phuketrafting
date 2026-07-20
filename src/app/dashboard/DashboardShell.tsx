@@ -24,6 +24,7 @@ import {
   LayoutTemplate,
   Palette,
   Settings,
+  Languages,
   LogOut,
   Menu,
   X,
@@ -61,6 +62,7 @@ const NAV = [
   { href: "/dashboard/gallery", label: "Gallery", icon: Images },
   { href: "/dashboard/faqs", label: "FAQ", icon: HelpCircle },
   { href: "/dashboard/blog", label: "Blog", icon: Newspaper },
+  { href: "/dashboard/translations", label: "Translations", icon: Languages },
   // Rendering is gated on role below, but that's UX, not security -- the
   // settings page and its action both requireAdmin() server-side.
   { href: "/dashboard/homepage", label: "Homepage", icon: LayoutTemplate, adminOnly: true },

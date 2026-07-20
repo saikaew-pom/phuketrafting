@@ -1,8 +1,8 @@
 import { requireStaff } from "@/lib/access";
 import { listImages } from "@/lib/queries/images";
 import { cloudinaryUrl } from "@/lib/cloudinary";
-import { ImageUploadField } from "@/components/ImageUploadField";
-import { addGalleryImage, removeGalleryImage, moveGalleryImage } from "./actions";
+import { GalleryUploadForm } from "@/components/GalleryUploadForm";
+import { removeGalleryImage, moveGalleryImage } from "./actions";
 
 /**
  * The homepage gallery, dashboard-managed (F4 / audit #6). While this list is
@@ -24,20 +24,12 @@ export default async function GalleryPage() {
       </div>
 
       <div className="pr-dash-card">
-        <h2>Add a photo</h2>
-        <form action={addGalleryImage} className="pr-dash-form">
-          <ImageUploadField name="image_id" initialPublicId={null} label="Photo" />
-          <label className="pr-dash-field">
-            Caption
-            <input name="label" maxLength={120} placeholder="e.g. White-water rafting" />
-            <span className="pr-dash-field-hint">Shown on hover and read by screen readers.</span>
-          </label>
-          <div className="pr-dash-actions">
-            <button type="submit" className="pr-dash-btn">
-              Add to gallery
-            </button>
-          </div>
-        </form>
+        <h2>Add photos</h2>
+        <p className="pr-dash-field-hint" style={{ marginBottom: "10px" }}>
+          Select as many as you like. Type a short hint per photo and click &quot;Suggest caption&quot; to have AI write
+          one, or just type your own -- either way, review before saving.
+        </p>
+        <GalleryUploadForm />
       </div>
 
       {images.length > 0 && (

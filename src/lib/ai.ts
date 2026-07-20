@@ -45,6 +45,15 @@ export const AI_MODEL = "MiniMax-M2";
  */
 const AI_TIMEOUT_MS = 45_000;
 
+/**
+ * Ceiling for the per-request override below. Cloudflare's edge closes a
+ * proxied HTTP request that hasn't responded within ~100s (a 524), so a
+ * server action that waits longer than that fails as an opaque gateway error
+ * instead of our own "took too long" message -- the override is clamped here
+ * rather than trusted, so no caller can accidentally ask for that.
+ */
+const AI_TIMEOUT_MAX_MS = 90_000;
+
 function getClient(config: AiConfig): Anthropic | null {
   const apiKey = config.MINIMAX_API_KEY;
   if (!apiKey) return null;
@@ -113,6 +122,19 @@ export interface AiRequest {
   tools?: Anthropic.Tool[];
   /** Budget the thinking, not just the answer -- see AI_MODEL's comment. */
   maxTokens?: number;
+  /**
+   * Hard deadline for this one call, defaulting to AI_TIMEOUT_MS and clamped
+   * to AI_TIMEOUT_MAX_MS.
+   *
+   * Only for STAFF-facing batch generations that legitimately produce
+   * thousands of tokens (the homepage translation batch is ~40 marketing
+   * fields), where the 45s guest-facing deadline is shorter than the response
+   * can physically take: no reasoning model emits a multi-thousand-token
+   * answer plus its thinking in 45s, so such a call times out every time
+   * regardless of how large max_tokens is. Guest-facing paths (chat) must
+   * keep the default -- a visitor should never wait this long.
+   */
+  timeoutMs?: number;
 }
 
 /**
@@ -124,6 +146,53 @@ export interface AiRequest {
  * "sorry, something went wrong" as if the model said it is indistinguishable
  * from the model actually saying that.
  */
+/**
+ * Guards a staff-facing (not guest-facing) AI generation: THROWS on a real API
+ * failure or a cut-off response, rather than degrading. A guest chatbot must
+ * always show something; this instead fills a form field a human is about to
+ * review, so a clear "try again" beats silently saving a response that
+ * stopped mid-sentence or came back empty (MiniMax-M2's silent-empty-answer
+ * failure mode -- see AI_MODEL's comment above). Shared by every one-shot
+ * staff-AI feature (blog draft/excerpt, gallery captions, ...) so the same
+ * two failure messages can't drift between them.
+ */
+export function requireCompleteText(text: string, stopReason: string | null): string {
+  if (stopReason === "max_tokens") {
+    throw new Error("The AI response was cut off before finishing. Try again, or shorten the input.");
+  }
+  if (!text) {
+    throw new Error("The AI didn't return any text. Try again.");
+  }
+  return text;
+}
+
+/**
+ * Turns an error thrown by aiComplete/requireCompleteText into a message
+ * safe to show a human -- never the raw vendor payload.
+ *
+ * Confirmed live (gallery "Suggest caption", real 429 from a MiniMax
+ * account at its quota): an Anthropic SDK APIError's `.message` is the
+ * ENTIRE HTTP response body serialized as text, e.g. `429
+ * {"type":"error","error":{"type":"rate_limit_error","message":"Token Plan
+ * usage limit reached...(2056)"},"request_id":"06ac..."}`. Every staff-AI
+ * action catches with `err instanceof Error ? err.message : ...` (this
+ * file's requireCompleteText doc references that shape), which was passing
+ * that raw blob straight into the dashboard's error UI unredacted.
+ *
+ * requireCompleteText's own thrown Errors ("cut off", "no text") and
+ * aiComplete's Promise.race timeout Error are already human-authored
+ * one-liners, not vendor payloads, so they pass through unchanged --
+ * only a real APIError (HTTP failure from the SDK) gets rewritten.
+ */
+export function describeAiError(err: unknown): string {
+  if (err instanceof Anthropic.APIError) {
+    return err.status === 429
+      ? "The AI is temporarily out of quota. Try again shortly, or ask an admin to check the MiniMax plan."
+      : "The AI service returned an error. Try again in a moment.";
+  }
+  return err instanceof Error ? err.message : "AI generation failed.";
+}
+
 export async function aiComplete(request: AiRequest, config: AiConfig): Promise<AiReply | null> {
   const client = getClient(config);
   if (!client) return null;
@@ -139,8 +208,9 @@ export async function aiComplete(request: AiRequest, config: AiConfig): Promise<
   // Promise.race, not the SDK's timeout option: plan §8 mandates a hard
   // ceiling regardless of what the client library does, and this also covers
   // a socket that connects but never finishes.
+  const timeoutMs = Math.min(request.timeoutMs ?? AI_TIMEOUT_MS, AI_TIMEOUT_MAX_MS);
   const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`AI request exceeded ${AI_TIMEOUT_MS}ms`)), AI_TIMEOUT_MS)
+    setTimeout(() => reject(new Error(`AI request exceeded ${timeoutMs}ms`)), timeoutMs)
   );
 
   const message = await Promise.race([call, timeout]);

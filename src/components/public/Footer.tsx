@@ -4,10 +4,28 @@ import { waLink } from "@/lib/whatsapp";
 import { listTours } from "@/lib/queries/tours";
 import { getSiteStats, type Logo } from "@/lib/queries/settings";
 import { cloudinaryUrl } from "@/lib/cloudinary";
+import type { ChromeKey } from "@/lib/chrome-strings";
 
-export async function Footer({ locale, logo, strapline }: { locale: string; logo: Logo; strapline: string }) {
+export async function Footer({
+  locale,
+  logo,
+  strapline,
+  strings,
+}: {
+  locale: string;
+  logo: Logo;
+  strapline: string;
+  strings: Record<ChromeKey, string>;
+}) {
   const stats = await getSiteStats();
   const tours = await listTours();
+  // strings["footer.rated_by"] carries the {rating}/{count} tokens through
+  // translation literally (translation-ai.ts's system prompt requires it) --
+  // interpolated here with the real values, same reason blog-ai.ts never lets
+  // the model invent a number: only real data fills a placeholder, never AI text.
+  const ratedBy = strings["footer.rated_by"]
+    .replaceAll("{rating}", stats.googleRating)
+    .replaceAll("{count}", stats.reviewCount);
 
   return (
     <footer className="pr-footer">
@@ -28,11 +46,11 @@ export async function Footer({ locale, logo, strapline }: { locale: string; logo
             target="_blank"
             rel="noreferrer"
           >
-            <MessageCircle size={17} className="pr-ico" /> WhatsApp us
+            <MessageCircle size={17} className="pr-ico" /> {strings["footer.whatsapp_us"]}
           </a>
         </div>
         <div className="pr-footer-col">
-          <h4>Tour packages</h4>
+          <h4>{strings["footer.tour_packages_heading"]}</h4>
           {/* Locale-prefixed so these work from the blog/manage/legal pages too,
               where a bare "#tours" points at a section that doesn't exist.
               Link (not <a>) keeps it a client nav rather than a full reload.
@@ -46,15 +64,15 @@ export async function Footer({ locale, logo, strapline }: { locale: string; logo
             ))}
         </div>
         <div className="pr-footer-col">
-          <h4>Explore</h4>
-          <Link href={`/${locale}#tours`}>All tour packages</Link>
-          <Link href={`/${locale}#why`}>Why choose us</Link>
-          <Link href={`/${locale}#reviews`}>Reviews</Link>
-          <Link href={`/${locale}#faq`}>FAQ</Link>
-          <Link href={`/${locale}/blog`}>Blog</Link>
+          <h4>{strings["footer.explore_heading"]}</h4>
+          <Link href={`/${locale}#tours`}>{strings["footer.all_tour_packages"]}</Link>
+          <Link href={`/${locale}#why`}>{strings["footer.why_choose_us"]}</Link>
+          <Link href={`/${locale}#reviews`}>{strings["footer.reviews"]}</Link>
+          <Link href={`/${locale}#faq`}>{strings["footer.faq"]}</Link>
+          <Link href={`/${locale}/blog`}>{strings["footer.blog"]}</Link>
         </div>
         <div className="pr-footer-col">
-          <h4>Contact</h4>
+          <h4>{strings["footer.contact_heading"]}</h4>
           <a href={waLink("Hi!")} target="_blank" rel="noreferrer">
             <MessageCircle size={14} className="pr-ico" /> +66 65 010 2184
           </a>
@@ -62,18 +80,18 @@ export async function Footer({ locale, logo, strapline }: { locale: string; logo
             <MapPin size={14} className="pr-ico" /> Le Rafting, Phang Nga
           </span>
           <span>
-            <Clock size={14} className="pr-ico" /> Daily · 8am&ndash;6pm
+            <Clock size={14} className="pr-ico" /> {strings["footer.hours"]}
           </span>
         </div>
       </div>
       <div className="pr-footer-base">
         <span>&copy; 2026 Phuket Rafting &middot; Le Rafting, Phang Nga</span>
         <span className="pr-footer-legal">
-          <Link href={`/${locale}/privacy`}>Privacy</Link>
-          <Link href={`/${locale}/terms`}>Terms</Link>
-          <Link href={`/${locale}/waiver`}>Waiver</Link>
+          <Link href={`/${locale}/privacy`}>{strings["footer.privacy"]}</Link>
+          <Link href={`/${locale}/terms`}>{strings["footer.terms"]}</Link>
+          <Link href={`/${locale}/waiver`}>{strings["footer.waiver"]}</Link>
         </span>
-        <span>Rated {stats.googleRating}&#9733; by {stats.reviewCount} travelers</span>
+        <span>{ratedBy}</span>
       </div>
     </footer>
   );
