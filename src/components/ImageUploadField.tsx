@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET } from "@/lib/cloudinary";
+import { MediaPicker } from "@/components/MediaPicker";
 
 interface Props {
   /** Form field name the resulting Cloudinary public_id is submitted under. */
@@ -18,6 +19,7 @@ export function ImageUploadField({ name, initialPublicId, label }: Props) {
   const [publicId, setPublicId] = useState(initialPublicId);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -49,7 +51,7 @@ export function ImageUploadField({ name, initialPublicId, label }: Props) {
   return (
     <div>
       <label>{label}</label>
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "4px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "4px", flexWrap: "wrap" }}>
         {publicId && (
           <Image
             src={publicId}
@@ -60,10 +62,25 @@ export function ImageUploadField({ name, initialPublicId, label }: Props) {
           />
         )}
         <input type="file" accept="image/*" onChange={handleFileChange} disabled={uploading} />
+        <button
+          type="button"
+          className="pr-dash-btn pr-dash-btn-ghost pr-dash-btn-sm"
+          onClick={() => setPickerOpen(true)}
+        >
+          Choose from gallery
+        </button>
       </div>
       <input type="hidden" name={name} value={publicId ?? ""} />
       {uploading && <p>Uploading…</p>}
       {error && <p style={{ color: "#e8590c" }}>{error}</p>}
+      <MediaPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(id) => {
+          setPublicId(id);
+          setPickerOpen(false);
+        }}
+      />
     </div>
   );
 }
