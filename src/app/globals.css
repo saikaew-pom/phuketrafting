@@ -1901,8 +1901,22 @@ select.pr-input {
   color: var(--ink-3);
   font-size: 13px;
 }
-.pr-blog-categories {
+/* `ul.` (not just `.pr-blog-categories`) is load-bearing, not decoration: both
+   usages (blog's "Browse by topic", gallery's tag filter) sit inside
+   `.pr-legal` for its 140px/108px nav-clearance padding, and `.pr-legal ul`
+   below sets flex-direction/margin/gap for genuine legal-page bullet lists
+   (privacy/terms/waiver). `.pr-legal ul`'s specificity (one class + one
+   type = 0,1,1) beat plain `.pr-blog-categories` (0,1,0), so its
+   flex-direction: column silently won with nothing here to contest that
+   property -- confirmed live, the pill list rendered as a full-width
+   vertical stack instead of wrapping pills on both blog and gallery.
+   `ul.pr-blog-categories` ties at (0,1,1) and wins on source order (defined
+   after `.pr-legal ul`), and flex-direction: row is now stated explicitly
+   rather than left to default so there's no unset property left for
+   `.pr-legal ul` to win by default again. */
+ul.pr-blog-categories {
   display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
   gap: 10px;
   margin: 0 0 40px;

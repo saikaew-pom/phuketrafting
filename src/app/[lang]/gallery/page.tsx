@@ -56,45 +56,55 @@ export default async function GalleryPage({
 
   return (
     <div>
-      <div className="pr-wrap" style={{ paddingTop: "48px" }}>
-        <h1>Photo gallery</h1>
-        <p className="pr-legal-updated">
-          Real photos from our trips -- browse everything, or filter by what you&apos;re into.
-        </p>
+      {/* pr-legal, not a bare pr-wrap: .pr-nav is `position: fixed` with a
+          transparent background until scrolled (designed to sit over the
+          homepage hero image) -- every other content page (blog, privacy,
+          terms, waiver) clears it via pr-legal's 140px top padding. A page
+          without that wrapper renders its heading UNDERNEATH the nav.
+          Confirmed live at 375px: the H1 sat at top:48px against a 79px-tall
+          transparent nav, so "Photo gallery" rendered visually overlapping
+          the logo/Book-now button. */}
+      <article className="pr-legal">
+        <div className="pr-wrap">
+          <h1>Photo gallery</h1>
+          <p className="pr-legal-updated">
+            Real photos from our trips -- browse everything, or filter by what you&apos;re into.
+          </p>
 
-        {allTags.length > 0 && (
-          <ul className="pr-blog-categories">
-            <li>
-              {/* Keyed off `tag`, not `activeTag`: a slug that matches no
-                  known tag must not light up "All" -- confirmed live that
-                  ?tag=<unknown-slug> used to show "All" as active while the
-                  actual view was an empty, tag-filtered result. `activeTag`
-                  is only non-null for a slug that resolved to a real tag, so
-                  using it here would call an unmatched-but-attempted filter
-                  the same as no filter at all. */}
-              <Link href={`/${lang}/gallery`} className={tag ? undefined : "pr-blog-category-active"}>
-                All
-              </Link>
-            </li>
-            {allTags.map((t) => (
-              <li key={t.id}>
-                <Link
-                  href={`/${lang}/gallery?tag=${t.slug}`}
-                  className={activeTag?.id === t.id ? "pr-blog-category-active" : undefined}
-                >
-                  {t.name}
+          {allTags.length > 0 && (
+            <ul className="pr-blog-categories">
+              <li>
+                {/* Keyed off `tag`, not `activeTag`: a slug that matches no
+                    known tag must not light up "All" -- confirmed live that
+                    ?tag=<unknown-slug> used to show "All" as active while the
+                    actual view was an empty, tag-filtered result. `activeTag`
+                    is only non-null for a slug that resolved to a real tag, so
+                    using it here would call an unmatched-but-attempted filter
+                    the same as no filter at all. */}
+                <Link href={`/${lang}/gallery`} className={tag ? undefined : "pr-blog-category-active"}>
+                  All
                 </Link>
               </li>
-            ))}
-          </ul>
-        )}
-      </div>
+              {allTags.map((t) => (
+                <li key={t.id}>
+                  <Link
+                    href={`/${lang}/gallery?tag=${t.slug}`}
+                    className={activeTag?.id === t.id ? "pr-blog-category-active" : undefined}
+                  >
+                    {t.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
 
-      {items.length === 0 ? (
-        <div className="pr-wrap">
-          <p>{tag ? "No photos with this tag yet." : "Photos are on their way -- check back soon."}</p>
+          {items.length === 0 && (
+            <p>{tag ? "No photos with this tag yet." : "Photos are on their way -- check back soon."}</p>
+          )}
         </div>
-      ) : (
+      </article>
+
+      {items.length > 0 && (
         <Gallery
           items={items}
           eyebrow={activeTag ? activeTag.name : "The full collection"}
