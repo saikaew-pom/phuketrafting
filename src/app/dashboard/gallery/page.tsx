@@ -6,7 +6,7 @@ import { cloudinaryUrl } from "@/lib/cloudinary";
 import { GalleryUploadForm } from "@/components/GalleryUploadForm";
 import { EditableCaption } from "@/components/EditableCaption";
 import { PhotoTags } from "@/components/PhotoTags";
-import { removeGalleryImage, moveGalleryImage } from "./actions";
+import { removeGalleryImage, moveGalleryImage, toggleShowOnHomeAction } from "./actions";
 
 /**
  * The homepage gallery, dashboard-managed (F4 / audit #6). While this list is
@@ -23,7 +23,8 @@ export default async function GalleryPage() {
       <div className="pr-dash-head">
         <h1>Gallery</h1>
         <p>
-          The photo strip on the home page (&quot;Straight from the river&quot;). Order here is the order shown.
+          The photo strip on the home page (&quot;Straight from the river&quot;). Order here is the order shown, and
+          the Homepage column controls whether a photo appears there at all.
           {images.length === 0 && " Until you add one, the site shows the original launch photos."}
         </p>
       </div>
@@ -52,6 +53,7 @@ export default async function GalleryPage() {
                   <th></th>
                   <th>Caption</th>
                   <th>Tags</th>
+                  <th>Homepage</th>
                   <th>Order</th>
                   <th></th>
                 </tr>
@@ -76,6 +78,16 @@ export default async function GalleryPage() {
                         allTags={allTags}
                         initialTagIds={(tagsByImage.get(img.id) ?? []).map((t) => t.id)}
                       />
+                    </td>
+                    <td>
+                      <form action={toggleShowOnHomeAction.bind(null, img.id, img.show_on_home !== 1)}>
+                        <button
+                          type="submit"
+                          className={"pr-dash-btn pr-dash-btn-sm" + (img.show_on_home === 1 ? "" : " pr-dash-btn-ghost")}
+                        >
+                          {img.show_on_home === 1 ? "Shown" : "Hidden"}
+                        </button>
+                      </form>
                     </td>
                     <td>
                       <div className="pr-dash-actions">

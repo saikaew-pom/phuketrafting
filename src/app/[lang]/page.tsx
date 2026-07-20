@@ -127,10 +127,16 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
 
   // Dashboard-managed gallery, falling back to the hardcoded launch set while
   // the gallery table is empty -- so the section is never blank and staff can
-  // take it over image by image. (Audit #6 / F4.)
+  // take it over image by image. (Audit #6 / F4.) The fallback check uses the
+  // UNFILTERED row count: once staff have added any real photo the section is
+  // "theirs", even if every one of them is currently hidden from the homepage
+  // (migration 0022's show_on_home) -- reverting to the old launch photos
+  // would be a more surprising outcome than just rendering nothing, which
+  // Gallery.tsx already does correctly for an empty item list.
+  const visibleGalleryRows = galleryRows.filter((g) => g.show_on_home === 1);
   const galleryItems =
     galleryRows.length > 0
-      ? galleryRows.map((g) => ({ publicId: g.image_id, label: g.label ?? "" }))
+      ? visibleGalleryRows.map((g) => ({ publicId: g.image_id, label: g.label ?? "" }))
       : GALLERY.map((g) => ({ publicId: g.publicId, label: g.label }));
 
   // Which tours appear on the homepage, and under which heading, is DATA now

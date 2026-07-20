@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { requireStaff } from "@/lib/access";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { addImage, deleteImage, moveImage, updateImageLabel } from "@/lib/queries/images";
+import { addImage, deleteImage, moveImage, updateImageLabel, setImageShowOnHome } from "@/lib/queries/images";
 import { setImageTags } from "@/lib/queries/tags";
 import { suggestGalleryCaption } from "@/lib/gallery-ai";
 import { describeAiError } from "@/lib/ai";
@@ -84,6 +84,18 @@ export async function removeGalleryImage(id: string): Promise<void> {
 export async function moveGalleryImage(id: string, direction: "up" | "down"): Promise<void> {
   await requireStaff();
   await moveImage(id, direction);
+  revalidateGallery();
+}
+
+/**
+ * Plain <form action>, not RPC -- same shape as removeGalleryImage/
+ * moveGalleryImage above (a full navigation reload is fine for a toggle, no
+ * client-side confirmation state to preserve), so no try/catch needed here:
+ * Next's error boundary handles a throw the way it already does for those.
+ */
+export async function toggleShowOnHomeAction(id: string, show: boolean): Promise<void> {
+  await requireStaff();
+  await setImageShowOnHome(id, show);
   revalidateGallery();
 }
 

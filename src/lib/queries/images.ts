@@ -15,9 +15,16 @@ export interface ProductImage {
   image_id: string;
   label: string | null;
   sort_order: number;
+  /** Gallery-only in practice (migration 0022) -- always 1 for tour/camp_zone rows, unused there. */
+  show_on_home: number;
 }
 
-/** All images for one owner, in display order. Gallery = ('gallery', null). */
+/**
+ * All images for one owner, in display order, INCLUDING gallery photos
+ * hidden from the homepage (show_on_home=0) -- the dashboard list must show
+ * everything staff manage, not just what's currently public. Gallery =
+ * ('gallery', null).
+ */
 export async function listImages(ownerType: ImageOwnerType, ownerId: string | null): Promise<ProductImage[]> {
   // owner_id is nullable, so "= ?" won't match NULL -- the IS-NULL branch
   // handles the gallery, the bound branch handles a product.
@@ -26,13 +33,13 @@ export async function listImages(ownerType: ImageOwnerType, ownerId: string | nu
     ownerId === null
       ? await db
           .prepare(
-            "SELECT id, owner_type, owner_id, image_id, label, sort_order FROM product_images WHERE owner_type = ?1 AND owner_id IS NULL ORDER BY sort_order, created_at"
+            "SELECT id, owner_type, owner_id, image_id, label, sort_order, show_on_home FROM product_images WHERE owner_type = ?1 AND owner_id IS NULL ORDER BY sort_order, created_at"
           )
           .bind(ownerType)
           .all<ProductImage>()
       : await db
           .prepare(
-            "SELECT id, owner_type, owner_id, image_id, label, sort_order FROM product_images WHERE owner_type = ?1 AND owner_id = ?2 ORDER BY sort_order, created_at"
+            "SELECT id, owner_type, owner_id, image_id, label, sort_order, show_on_home FROM product_images WHERE owner_type = ?1 AND owner_id = ?2 ORDER BY sort_order, created_at"
           )
           .bind(ownerType, ownerId)
           .all<ProductImage>();
@@ -67,6 +74,14 @@ export async function addImage(
 /** Overwrites an image's caption/alt text. */
 export async function updateImageLabel(id: string, label: string | null): Promise<void> {
   await getDb().prepare("UPDATE product_images SET label = ?1 WHERE id = ?2").bind(label, id).run();
+}
+
+/** Toggles whether a gallery photo appears in the homepage teaser strip. */
+export async function setImageShowOnHome(id: string, show: boolean): Promise<void> {
+  await getDb()
+    .prepare("UPDATE product_images SET show_on_home = ?1 WHERE id = ?2")
+    .bind(show ? 1 : 0, id)
+    .run();
 }
 
 /** Removes one image. Returns whether a row was actually deleted. */
