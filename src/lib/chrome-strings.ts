@@ -28,6 +28,7 @@ export const CHROME_STRINGS: readonly ChromeStringDef[] = [
   { key: "footer.tour_packages_heading", en: "Tour packages" },
   { key: "footer.explore_heading", en: "Explore" },
   { key: "footer.all_tour_packages", en: "All tour packages" },
+  { key: "footer.gallery", en: "Gallery" },
   { key: "footer.why_choose_us", en: "Why choose us" },
   { key: "footer.reviews", en: "Reviews" },
   { key: "footer.faq", en: "FAQ" },

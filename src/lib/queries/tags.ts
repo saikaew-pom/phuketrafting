@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+import type { ProductImage } from "@/lib/queries/images";
 
 /**
  * Staff-managed tags (migration 0021) + their many-to-many assignment to
@@ -130,6 +131,28 @@ export async function getImageTagsBatch(productImageIds: string[]): Promise<Map<
     }
   }
   return map;
+}
+
+/**
+ * Gallery photos carrying a given tag, by the tag's slug -- for the public
+ * /gallery page's tag filter (a URL like /en/gallery?tag=rafting). A slug
+ * that matches no tag (a stale bookmark after a rename, or a typo) degrades
+ * to an empty list rather than throwing -- same "bad input never 500s a
+ * public page" stance as this app's other public queries.
+ */
+export async function listImagesByTagSlug(tagSlug: string): Promise<ProductImage[]> {
+  const { results } = await getDb()
+    .prepare(
+      `SELECT pi.id, pi.owner_type, pi.owner_id, pi.image_id, pi.label, pi.sort_order, pi.show_on_home
+       FROM product_images pi
+       JOIN image_tags it ON it.product_image_id = pi.id
+       JOIN tags t ON t.id = it.tag_id
+       WHERE t.slug = ?1 AND pi.owner_type = 'gallery'
+       ORDER BY pi.sort_order, pi.created_at`
+    )
+    .bind(tagSlug)
+    .all<ProductImage>();
+  return results;
 }
 
 /**

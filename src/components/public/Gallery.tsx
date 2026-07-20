@@ -13,7 +13,21 @@ export interface GalleryItem {
 // items come from D1 (dashboard-managed) via the landing page, or the
 // hardcoded fallback when the gallery table is empty. The mosaic CSS defines
 // positions pr-gitem-0..5, so positions cycle with % 6 for any count.
-export function Gallery({ items }: { items: GalleryItem[] }) {
+//
+// eyebrow/title default to the homepage teaser's copy so the landing page
+// caller (which passes neither) is unchanged -- the standalone /gallery page
+// passes its own, since "Straight from the river" / "This could be your day"
+// reads like a landing-page hook, not a page heading, once it's not sitting
+// inside the homepage anymore.
+export function Gallery({
+  items,
+  eyebrow = "Straight from the river",
+  title = "This could be your day",
+}: {
+  items: GalleryItem[];
+  eyebrow?: string;
+  title?: string;
+}) {
   const [index, setIndex] = useState<number | null>(null);
   const count = items.length;
 
@@ -33,7 +47,7 @@ export function Gallery({ items }: { items: GalleryItem[] }) {
   return (
     <section className="pr-section" id="gallery">
       <div className="pr-wrap">
-        <SectionHead center eyebrow="Straight from the river" title="This could be your day" />
+        <SectionHead center eyebrow={eyebrow} title={title} />
         <div className="pr-gallery">
           {items.map((g, i) => (
             <button className={"pr-gitem pr-gitem-" + (i % 6)} key={`${g.publicId}-${i}`} onClick={() => setIndex(i)}>

@@ -69,6 +69,7 @@ export async function Footer({
           <Link href={`/${locale}#why`}>{strings["footer.why_choose_us"]}</Link>
           <Link href={`/${locale}#reviews`}>{strings["footer.reviews"]}</Link>
           <Link href={`/${locale}#faq`}>{strings["footer.faq"]}</Link>
+          <Link href={`/${locale}/gallery`}>{strings["footer.gallery"]}</Link>
           <Link href={`/${locale}/blog`}>{strings["footer.blog"]}</Link>
         </div>
         <div className="pr-footer-col">
