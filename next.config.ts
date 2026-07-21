@@ -53,6 +53,55 @@ const nextConfig: NextConfig = {
       { source: "/hello-world", destination: "/en", permanent: true },
     ];
   },
+
+  // The site had no security response headers at all. These four are the
+  // safe, low-risk subset: none of them can break an existing feature, since
+  // none constrain *what* the page is allowed to load (that's Content-
+  // Security-Policy's job, deliberately NOT added here -- this app leans on
+  // an inline theme <style>, GA4's inline consent-mode script + gtag.js from
+  // googletagmanager.com, next/font's Google Fonts, Cloudinary images,
+  // Turnstile's widget script and Stripe's redirect, and a CSP that doesn't
+  // allowlist every one of those correctly fails closed by breaking the
+  // feature, not by degrading -- that needs its own dedicated, page-by-page
+  // verified pass, not a line added alongside a broad sweep of unrelated
+  // fixes).
+  //
+  // Referrer-Policy here is the sitewide default; /[lang]/manage/[token]
+  // already sets a stricter `<meta name="referrer" content="no-referrer">`
+  // for itself, and a page-level meta tag overrides the HTTP header per spec,
+  // so the two don't conflict.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          // Stops a browser from guessing a response's MIME type from its
+          // content and executing it as something other than what the
+          // Content-Type header says -- the classic vector is an uploaded
+          // "image" that's actually script, sniffed as HTML/JS and run.
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          // No page on this site is meant to be framed by another origin --
+          // there's no embed/widget use case here, only ways framing could be
+          // abused (clickjacking a booking button, a fake overlay on the
+          // dashboard).
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          // Send the full URL to same-origin requests (useful for our own
+          // analytics/debugging) but only the origin, not the path, cross-
+          // origin -- balances GA4/outbound-link utility against leaking
+          // page content (booking details, a manage_token-bearing path
+          // before the page-level override above applies) to third parties.
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          // Force HTTPS for a year, including subdomains, once a browser has
+          // seen it once. Harmless to send unconditionally -- Cloudflare
+          // Workers only ever serve this app over HTTPS in production, and a
+          // browser only acts on HSTS from a secure context in the first
+          // place, so this header is inert (never read) during local
+          // `wrangler dev`/`preview` over plain HTTP.
+          { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+        ],
+      },
+    ];
+  },
 };
 
 initOpenNextCloudflareForDev();

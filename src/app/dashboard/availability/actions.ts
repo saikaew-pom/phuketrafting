@@ -2,9 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { requireStaff, requireAdmin } from "@/lib/access";
+import { getRequestOrigin } from "@/lib/request-origin";
 import { getDb } from "@/lib/db";
 import { generateSessions } from "@/lib/session-generator";
 import { logBookingEvent } from "@/lib/booking";
@@ -152,7 +152,7 @@ export async function closeSession(sessionId: string, formData: FormData): Promi
   if (mode === "refund") {
     const bookings = await listActiveBookingsForSession(sessionId);
     const { env } = getCloudflareContext();
-    const host = (await headers()).get("host");
+    const origin = await getRequestOrigin();
 
     for (const b of bookings) {
       try {
@@ -195,7 +195,7 @@ export async function closeSession(sessionId: string, formData: FormData): Promi
         // this a guest could be cancelled+refunded and silently NOT emailed
         // (Brevo unconfigured returns false, not a throw) with no trace of why.
         if (b.guest_email) {
-          const manageUrl = b.manage_token && host ? `https://${host}/${b.locale}/manage/${b.manage_token}` : null;
+          const manageUrl = b.manage_token && origin ? `${origin}/${b.locale}/manage/${b.manage_token}` : null;
           try {
             const sent = await sendBookingStatusEmail(
               {

@@ -6,6 +6,7 @@ import { getChatPolicy } from "@/lib/queries/settings";
 import { appendMessage } from "@/lib/queries/conversations";
 import { WHATSAPP_NUMBER } from "@/lib/whatsapp";
 import { sendBookingAck } from "@/lib/booking-ack";
+import { getRequestOrigin } from "@/lib/request-origin";
 
 /**
  * The ONLY path that turns a chatbot draft into a real booking (plan §9's
@@ -237,7 +238,12 @@ export async function POST(request: Request): Promise<Response> {
     // an already-successful booking into an error response -- same "awaited,
     // not fire-and-forget" reasoning as the other two booking paths: a Worker
     // can be torn down the instant this response returns.
-    await sendBookingAck(result.bookingId!, request.headers.get("host"));
+    //
+    // getRequestOrigin(), not request.headers.get("host") directly -- see
+    // booking-actions.ts's submitTourBooking for why. This is a Route Handler
+    // rather than a Server Action, but getRequestOrigin() calls next/headers'
+    // headers() internally, which works the same in both contexts.
+    await sendBookingAck(result.bookingId!, await getRequestOrigin());
 
     // Plan §9: "post-confirm message says 'pending until staff confirms' +
     // receptionist WhatsApp". Written into the thread so it survives a reload

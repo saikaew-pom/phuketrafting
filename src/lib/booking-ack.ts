@@ -39,7 +39,7 @@ import { getBookingDetail } from "@/lib/queries/bookings";
  * to know a booking landed, especially since a guest with no email on file
  * is exactly the case where nothing else will tell them), and vice versa.
  */
-export async function sendBookingAck(bookingId: string, host: string | null): Promise<void> {
+export async function sendBookingAck(bookingId: string, origin: string | null): Promise<void> {
   // Wrapped, unlike the two sends below: getBookingDetail is a D1 read with
   // no try/catch of its own, and a transient D1 failure here must not escape
   // this function -- callers (booking-actions.ts, camp-booking-actions.ts)
@@ -68,8 +68,15 @@ export async function sendBookingAck(bookingId: string, host: string | null): Pr
     await safeLog(bookingId, "booking_ack_skipped", { reason: "no guest email on file" });
   } else {
     try {
+      // `origin` comes from getRequestOrigin() (a caller's job, not this
+      // function's), which already resolved http vs https correctly for
+      // local dev vs production and validated the Host it was built from --
+      // this used to hardcode "https://" and read the raw Host header
+      // directly, so a manage-booking link emailed during local `wrangler
+      // dev`/`preview` was "https://localhost:8787/...", which doesn't load
+      // (the local server only ever speaks plain http).
       const manageUrl =
-        booking.manage_token && host ? `https://${host}/${booking.locale}/manage/${booking.manage_token}` : null;
+        booking.manage_token && origin ? `${origin}/${booking.locale}/manage/${booking.manage_token}` : null;
 
       const sent = await sendBookingReceivedEmail({
         guestName: booking.guest_name,

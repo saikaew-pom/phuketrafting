@@ -20,7 +20,14 @@ export function waLink(message: string): string {
  * so a wrong guess is visibly correctable by staff, not a silent misfire.
  */
 export function guestWaLink(phone: string, message: string): string {
-  const digits = phone.replace(/\D/g, "");
+  const raw = phone.replace(/\D/g, "");
+  // "00" is the international dialing prefix some guests type instead of
+  // "+" (e.g. "0066812345678" for +66 81 234 5678) -- stripped BEFORE the
+  // single-"0" local-format check below, which would otherwise treat only
+  // the first digit as the local trunk prefix and leave the second "0"
+  // attached: "0066812345678" -> digits.slice(1) = "066812345678" ->
+  // "66" + that = "66066812345678", a malformed number wa.me can't resolve.
+  const digits = raw.startsWith("00") ? raw.slice(2) : raw;
   const withCountryCode = digits.startsWith("0") ? `66${digits.slice(1)}` : digits;
   return `https://wa.me/${withCountryCode}?text=${encodeURIComponent(message)}`;
 }

@@ -7,6 +7,7 @@ import { verifyTurnstile } from "@/lib/turnstile";
 import { createTourBooking } from "@/lib/booking";
 import { openCheckoutForBooking } from "@/lib/checkout";
 import { sendBookingAck } from "@/lib/booking-ack";
+import { getRequestOrigin } from "@/lib/request-origin";
 import { calculateTourPrice, type PriceBreakdown } from "@/lib/pricing";
 import { listAvailableTourSessions, type AvailableTourSession } from "@/lib/scheduling";
 import { isSupportedLocale, DEFAULT_LOCALE } from "@/lib/i18n";
@@ -243,7 +244,12 @@ export async function submitTourBooking(_prevState: BookingFormState, formData: 
     // response is returned, and an un-awaited promise would simply never run
     // -- the guest would silently get no email. sendBookingAck never throws,
     // so this can't turn a successful booking into an error.
-    await sendBookingAck(result.bookingId!, requestHeaders.get("host"));
+    //
+    // getRequestOrigin(), not requestHeaders.get("host") directly -- it
+    // validates the Host against known-good values and resolves http vs
+    // https correctly, same helper openCheckoutForBooking above already
+    // uses for the Stripe success_url.
+    await sendBookingAck(result.bookingId!, await getRequestOrigin());
 
     return {
       status: "success",

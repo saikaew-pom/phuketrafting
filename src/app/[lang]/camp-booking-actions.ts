@@ -7,6 +7,7 @@ import { verifyTurnstile } from "@/lib/turnstile";
 import { createCampBooking } from "@/lib/booking";
 import { openCheckoutForBooking } from "@/lib/checkout";
 import { sendBookingAck } from "@/lib/booking-ack";
+import { getRequestOrigin } from "@/lib/request-origin";
 import { calculateCampPrice, MAX_STAY_NIGHTS, type PriceBreakdown } from "@/lib/pricing";
 import { listAvailableCampUnits, type AvailableCampUnit } from "@/lib/scheduling";
 import { getCampRates, type CampRate } from "@/lib/queries/camping";
@@ -228,7 +229,10 @@ export async function submitCampBooking(
     // hears nothing is the same bug. Awaited (never fire-and-forget) because
     // the Worker can be torn down as soon as this returns; sendBookingAck
     // never throws, so a mail failure can't fail the booking.
-    await sendBookingAck(result.bookingId!, requestHeaders.get("host"));
+    //
+    // getRequestOrigin(), not requestHeaders.get("host") directly -- see
+    // booking-actions.ts's submitTourBooking for why.
+    await sendBookingAck(result.bookingId!, await getRequestOrigin());
 
     return {
       status: "success",

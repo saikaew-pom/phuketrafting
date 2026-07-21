@@ -70,7 +70,30 @@ export async function verifyAccessHeaders(requestHeaders: Headers): Promise<Acce
   return verifyAccessToken(token);
 }
 
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+// Exported: request-origin.ts's getRequestOrigin() reuses this same set to
+// decide which Host values are "known-good local dev", rather than
+// maintaining a second copy that could drift from this one.
+export const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * Strips ":port" off a raw Host header value, bracket-aware so an IPv6
+ * literal survives intact. A naive `host.split(":")[0]` mangles
+ * "[::1]:8787" into "[" -- IPv6 addresses embed their own colons, so
+ * splitting on the first one truncates mid-address instead of stopping at
+ * the ":port" suffix, which left the "[::1]" entry in LOCAL_HOSTS above
+ * unreachable: nothing a real request could send ever produced that exact
+ * string. Every caller that needs "the Host, minus any port" (this file's
+ * getDevBypassIdentity below, and request-origin.ts's getRequestOrigin)
+ * should go through this rather than re-deriving it, for the same
+ * single-source-of-truth reason LOCAL_HOSTS itself is exported.
+ */
+export function hostnameFromHost(host: string): string {
+  if (host.startsWith("[")) {
+    const end = host.indexOf("]");
+    return end === -1 ? host : host.slice(0, end + 1);
+  }
+  return host.split(":")[0] ?? "";
+}
 
 /**
  * Dev-only mock identity. Two independent conditions must both hold before
@@ -93,7 +116,7 @@ const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
  * deploying.
  */
 export function getDevBypassIdentity(hostHeader: string | null): AccessIdentity | null {
-  const host = hostHeader?.split(":")[0] ?? "";
+  const host = hostnameFromHost(hostHeader ?? "");
   if (!LOCAL_HOSTS.has(host)) return null;
   const { env } = getCloudflareContext();
   if (env.DEV_AUTH_BYPASS !== "true") return null;

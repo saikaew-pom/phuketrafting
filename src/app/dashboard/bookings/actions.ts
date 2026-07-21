@@ -1,10 +1,10 @@
 "use server";
 
-import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { requireStaff, requireAdmin } from "@/lib/access";
+import { getRequestOrigin } from "@/lib/request-origin";
 import { createRefund } from "@/lib/payments";
 import {
   updateBookingStatus,
@@ -103,9 +103,9 @@ async function sendStatusChangeNotifications(booking: BookingDetail, status: "co
     await safeLog(booking.id, "status_email_skipped", { status, reason: "no guest email on file" });
   } else {
     try {
-      const host = (await headers()).get("host");
+      const origin = await getRequestOrigin();
       const manageUrl =
-        booking.manage_token && host ? `https://${host}/${booking.locale}/manage/${booking.manage_token}` : null;
+        booking.manage_token && origin ? `${origin}/${booking.locale}/manage/${booking.manage_token}` : null;
 
       const sent = await sendBookingStatusEmail(
         {
@@ -221,10 +221,10 @@ export async function notifyGuestEmail(bookingId: string, _formData: FormData) {
   // background use) -- catch it so it records last_email_status='failed'
   // and shows up in the activity log, rather than crashing this action into
   // the same unhandled-500 gap flagged for the rest of /dashboard.
-  // Built from the actual request Host header, not lib/site.ts's SITE_URL --
-  // see sendBookingReceivedEmail's manageUrl doc comment for why.
-  const host = (await headers()).get("host");
-  const manageUrl = booking.manage_token && host ? `https://${host}/${booking.locale}/manage/${booking.manage_token}` : null;
+  // getRequestOrigin(), not lib/site.ts's SITE_URL -- see
+  // sendBookingReceivedEmail's manageUrl doc comment for why.
+  const origin = await getRequestOrigin();
+  const manageUrl = booking.manage_token && origin ? `${origin}/${booking.locale}/manage/${booking.manage_token}` : null;
 
   let status: "sent" | "failed" | "not_configured";
   try {

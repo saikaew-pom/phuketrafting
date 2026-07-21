@@ -1,5 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { GOOGLE_REVIEW_URL, BUSINESS_NAME, BUSINESS_PHONE } from "@/lib/site";
+import { baht } from "@/lib/format";
 
 const BREVO_SEND_URL = "https://api.brevo.com/v3/smtp/email";
 
@@ -320,7 +321,7 @@ export async function sendBookingReceivedEmail(booking: BookingReceivedEmail, co
     ${emailDetailCard([
       ["Booking", escapeHtml(booking.productName)],
       ["Date", escapeHtml(booking.date)],
-      ["Total", `${formatTHB(booking.total)} ${escapeHtml(booking.currency)}`],
+      ["Total", `${baht(booking.total)}`],
     ])}
     ${booking.manageUrl ? emailButton(booking.manageUrl, "View or manage your booking") : ""}
     <p style="margin-top:20px;">Questions? Just reply to this email or message us on WhatsApp.</p>
@@ -368,7 +369,7 @@ export async function sendBookingStatusEmail(
   const detailCard = emailDetailCard([
     ["Booking", escapeHtml(booking.productName)],
     ["Date", escapeHtml(booking.date)],
-    ["Total", `${formatTHB(booking.total)} ${escapeHtml(booking.currency)}`],
+    ["Total", `${baht(booking.total)}`],
   ]);
 
   const bodyHtml =
@@ -440,7 +441,7 @@ export async function sendBookingStaffNotice(
       ["Guest", escapeHtml(booking.guestName)],
       ["Booking", escapeHtml(booking.productName)],
       ["Date", escapeHtml(booking.date)],
-      ["Total", `${formatTHB(booking.total)} ${escapeHtml(booking.currency)}`],
+      ["Total", `${baht(booking.total)}`],
     ])}
     <p style="margin:16px 0 0; font-size:13px; color:#79838a;">Booking ref: ${escapeHtml(booking.id)}</p>
   `;
@@ -607,10 +608,6 @@ export async function sendThankYouEmail(booking: ScheduledGuestEmail, config?: B
     html: renderEmailLayout({ preheader: `Thanks for joining us for ${booking.productName} -- we hope you had a great time.`, bodyHtml }),
   });
   return true;
-}
-
-function formatTHB(amount: number): string {
-  return `฿${amount.toLocaleString("en-US")}`;
 }
 
 function escapeHtml(value: string): string {
