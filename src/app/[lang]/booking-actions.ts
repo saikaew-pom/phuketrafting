@@ -198,6 +198,15 @@ export async function submitTourBooking(_prevState: BookingFormState, formData: 
     if (data.adults + data.children + data.infants <= 0) {
       return { status: "error", message: "Please select at least one guest." };
     }
+    // Neither field is individually required (Zod only bounds/validates their
+    // shape), so a guest who leaves both blank was accepted: a real booking
+    // claimed a seat with guest_email/guest_phone both NULL, sendBookingAck
+    // silently skipped (it bails with no email), and staff had no way to
+    // reach the guest to confirm pickup at all. Same post-parse
+    // business-rule-check pattern as the guest-count check above.
+    if (!data.guestEmail && !data.guestPhone) {
+      return { status: "error", message: "Please add an email or a phone number so we can confirm your booking." };
+    }
     const locale = isSupportedLocale(data.locale) ? data.locale : DEFAULT_LOCALE;
 
     const result = await createTourBooking({

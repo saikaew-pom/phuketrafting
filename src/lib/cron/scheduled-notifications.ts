@@ -7,6 +7,7 @@ import {
   type NotificationKind,
 } from "@/lib/queries/notifications";
 import { sendPreArrivalEmail, sendThankYouEmail, type BrevoConfig } from "@/lib/brevo";
+import { logBookingEvent } from "@/lib/booking";
 
 /**
  * The daily guest-notification crons (plan §2's "Pre-arrival automation"):
@@ -89,6 +90,7 @@ async function processBatch(
     }
 
     let status: "sent" | "failed" | "not_configured";
+    let sendError: string | null = null;
     try {
       const sent = await send(booking);
       status = sent ? "sent" : "not_configured";
@@ -102,7 +104,27 @@ async function processBatch(
     } catch (err) {
       console.error(`${kind} send failed for booking ${booking.id}`, err);
       status = "failed";
+      sendError = err instanceof Error ? err.message : String(err);
       tally.failed++;
+    }
+
+    // recordNotificationStatus below writes pre_arrival_status/thank_you_status,
+    // but nothing reads those columns -- no dashboard screen, no filter, no
+    // count (confirmed by grep: the Booking/BookingDetail interfaces in
+    // queries/bookings.ts don't even carry them). A bounced pre-arrival email
+    // was therefore invisible: the guest gets no pickup time, staff get no
+    // signal, and this booking is never re-selected (claimNotification is
+    // at-most-once by design). Logging the failure onto the booking's own
+    // Activity tab -- the one place staff already look, and the exact pattern
+    // booking-ack.ts's safeLog already uses for the same class of failure --
+    // is the minimum change that makes a bounced reminder visible without a
+    // new column, screen, or read path.
+    if (status === "failed") {
+      try {
+        await logBookingEvent(booking.id, "system", `${kind}_email_failed`, { error: sendError }, db);
+      } catch (logErr) {
+        console.error(`${kind} failure-log itself failed for booking ${booking.id}`, logErr);
+      }
     }
 
     // Deliberately outside the try above. Recording the outcome is

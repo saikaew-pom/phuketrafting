@@ -197,20 +197,38 @@ export async function aiComplete(request: AiRequest, config: AiConfig): Promise<
   const client = getClient(config);
   if (!client) return null;
 
-  const call = client.messages.create({
-    model: AI_MODEL,
-    max_tokens: request.maxTokens ?? 1500,
-    system: request.system,
-    messages: request.messages,
-    ...(request.tools?.length ? { tools: request.tools } : {}),
-  });
-
-  // Promise.race, not the SDK's timeout option: plan §8 mandates a hard
-  // ceiling regardless of what the client library does, and this also covers
-  // a socket that connects but never finishes.
   const timeoutMs = Math.min(request.timeoutMs ?? AI_TIMEOUT_MS, AI_TIMEOUT_MAX_MS);
+
+  // A real AbortController, not just a Promise.race abandoning the call: the
+  // race alone let our side move on while the underlying fetch kept running
+  // to completion. MiniMax finished the generation and billed it regardless,
+  // but the catch below never sees a usage object, so addChatTokens is never
+  // called for that round -- the daily spend cap is driven entirely by what
+  // it records, so sustained timeouts (the exact symptom of the degraded
+  // upstream that caused the previous account-wide 429) let real spend accrue
+  // while the counter stays flat and the cap never bites. Same pattern
+  // brevo.ts already uses for its own timeout. Promise.race stays as the
+  // outer belt-and-braces per plan §8's "hard ceiling regardless of what the
+  // client library does" -- an aborted signal that the SDK somehow doesn't
+  // honor (a hung DNS lookup before the request is even issued) still can't
+  // block past timeoutMs.
+  const controller = new AbortController();
+  const call = client.messages.create(
+    {
+      model: AI_MODEL,
+      max_tokens: request.maxTokens ?? 1500,
+      system: request.system,
+      messages: request.messages,
+      ...(request.tools?.length ? { tools: request.tools } : {}),
+    },
+    { signal: controller.signal }
+  );
+
   const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`AI request exceeded ${timeoutMs}ms`)), timeoutMs)
+    setTimeout(() => {
+      controller.abort();
+      reject(new Error(`AI request exceeded ${timeoutMs}ms`));
+    }, timeoutMs)
   );
 
   const message = await Promise.race([call, timeout]);

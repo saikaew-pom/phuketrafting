@@ -150,6 +150,13 @@ export async function submitCampBooking(
     if (data.adults + data.children + data.infants <= 0) {
       return { status: "error", message: "Please select at least one guest." };
     }
+    // Same gap and fix as submitTourBooking: neither field is individually
+    // required, so a guest could leave both blank, claim a unit, and leave
+    // staff no way to reach them (sendBookingAck silently skips with no
+    // email).
+    if (!data.guestEmail && !data.guestPhone) {
+      return { status: "error", message: "Please add an email or a phone number so we can confirm your booking." };
+    }
     // Same post-parse business-rule-check pattern as the guest-count check
     // above (not a Zod .refine -- these need the two fields compared against
     // each other and against "today", which Zod's per-field schema doesn't

@@ -585,19 +585,21 @@ export interface ExpiredBookingRow {
  * (plan §4: "Expiry sweeper (Cron Trigger, 15 min): awaiting_payment bookings
  * past expiry -> cancel + free capacity").
  *
- * The webhook already releases on checkout.session.expired, so this is the
- * BACKSTOP for the case where that delivery never lands (an outage, a bad
- * deploy, the destination misconfigured). Without it, one missed webhook
- * silently holds a seat forever.
+ * For a booking that DID get a Stripe session, the webhook already releases it
+ * on checkout.session.expired, so that arm of this query is the BACKSTOP for
+ * the case where that delivery never lands (an outage, a bad deploy, the
+ * destination misconfigured). Without it, one missed webhook silently holds a
+ * seat forever. The other arm below covers a booking that never got a session
+ * at all -- see the query's own comment for why that's a distinct case with no
+ * webhook coming, ever.
  *
- * `stripe_checkout_session_id IS NOT NULL` is the load-bearing condition, and
- * it is NOT a stand-in for "unpaid". Read literally, plan §4 says to sweep any
- * `awaiting_payment` booking past expiry -- but under a pay_on_day policy
- * every booking is awaiting_payment forever by design (no deposit, no session,
- * nothing to collect until they arrive), so that rule would auto-cancel the
- * entire book of legitimate business the moment staff switched policy. Only a
- * booking that actually has a Stripe session pending is waiting on a payment
- * that can expire.
+ * `deposit_amount > 0` is the load-bearing condition, not a stand-in for
+ * "unpaid". Read literally, plan §4 says to sweep any `awaiting_payment`
+ * booking past expiry -- but under a pay_on_day policy every booking is
+ * awaiting_payment forever by design (no deposit, nothing to collect until
+ * they arrive), so that rule would auto-cancel the entire book of legitimate
+ * business the moment staff switched policy. Only a booking that actually owes
+ * money online is waiting on a payment that can expire.
  *
  * It also (deliberately) spares a booking whose Checkout never opened at all
  * (checkout.ts's fail-open path, logged as checkout_open_failed): that guest
@@ -609,18 +611,48 @@ export async function listExpiredUnpaidBookings(
   dbOverride?: D1Database
 ): Promise<ExpiredBookingRow[]> {
   // See releaseUnpaidBooking on why db is overridable.
-  // Sweeps on the per-booking payment_expires_at (frozen from Stripe's own
-  // expires_at at session creation), not on created_at + a re-read hold. A row
-  // without payment_expires_at (no deposit, or created before migration 0015)
-  // is never swept here -- the webhook is the release path for those. (Audit A3.)
+  // Two arms, not one:
+  //
+  //  1. payment_expires_at IS NOT NULL -- sweeps on the per-booking deadline
+  //     frozen from Stripe's own session expiry, exactly as before.
+  //  2. payment_expires_at IS NULL AND deposit_amount > 0 AND
+  //     stripe_checkout_session_id IS NULL -- a booking that owes a deposit
+  //     but never got a Stripe session at all: openCheckoutForBooking returns
+  //     early with no session on a missing STRIPE_SECRET_KEY, a missing
+  //     request origin, or a failed detail read (checkout.ts's documented
+  //     fail-open), and /api/chat/confirm never calls it in the first place --
+  //     every chatbot booking lands here by construction, since plan §9's
+  //     "pending until staff confirm" flow was never wired to Stripe.
+  //
+  //     The stale version of this comment claimed "the webhook is the release
+  //     path for those" -- true for a booking whose session creation merely
+  //     hasn't run yet, false for one that will NEVER have a session, because
+  //     no webhook is ever coming for an event that doesn't exist. Without
+  //     this arm those seats were held forever: ten guests booking through a
+  //     brief Stripe-key rotation, or any chatbot booking that goes unpaid,
+  //     each permanently occupied a seat with no automatic recovery, only a
+  //     staff member finding and cancelling each by hand.
+  //
+  //     Arm 2 sweeps on created_at against the same cutoff as arm 1 (already
+  //     the sweeper's own margin past a real deadline) rather than a distinct
+  //     per-booking deadline, since there is no Stripe-tracked expiry to be
+  //     precise against here -- this is a backstop for "no path to pay was
+  //     ever offered", not a promise honoring a specific hold length.
+  //
+  //  deposit_amount = 0 (pay_on_day, or a fully-discounted booking) is
+  //  correctly excluded from BOTH arms forever -- nothing was ever owed
+  //  online, so there is nothing to expire.
   const { results } = await (dbOverride ?? getDb())
     .prepare(
       `SELECT id, guest_name, created_at
          FROM bookings
         WHERE ${UNPAID_GUARD}
-          AND payment_expires_at IS NOT NULL
-          AND payment_expires_at < ?1
-        ORDER BY payment_expires_at`
+          AND (
+            (payment_expires_at IS NOT NULL AND payment_expires_at < ?1)
+            OR (payment_expires_at IS NULL AND deposit_amount > 0
+                AND stripe_checkout_session_id IS NULL AND created_at < ?1)
+          )
+        ORDER BY COALESCE(payment_expires_at, created_at)`
     )
     .bind(cutoffUnix)
     .all<ExpiredBookingRow>();
