@@ -104,7 +104,15 @@ export async function listPreArrivalDue(db: D1Database, date: string): Promise<D
         WHERE ${PRE_ARRIVAL_DATE_EXPR} = ?1
           AND b.status IN (${PRE_ARRIVAL_STATUSES.map(() => "?").join(",")})
           AND b.guest_email IS NOT NULL
-          AND b.pre_arrival_sent_at IS NULL`
+          AND b.pre_arrival_sent_at IS NULL
+          -- ts.id IS NULL keeps camp bookings (no tour_session_id to join at
+          -- all) unaffected. For a tour booking, ts.is_blocked = 0 excludes a
+          -- departure staff closed (closeSession's "quiet" mode leaves the
+          -- booking itself untouched, on purpose, so guests already booked
+          -- aren't auto-cancelled) -- without this a guest whose trip staff
+          -- had closed still got "your van picks you up at 07:00" the night
+          -- before, for a departure that was not running.
+          AND (ts.id IS NULL OR ts.is_blocked = 0)`
     )
     .bind(date, ...PRE_ARRIVAL_STATUSES)
     .all<DueBooking>();
@@ -124,7 +132,11 @@ export async function listThankYouDue(db: D1Database, date: string): Promise<Due
         WHERE ${THANK_YOU_DATE_EXPR} = ?1
           AND b.status IN (${THANK_YOU_STATUSES.map(() => "?").join(",")})
           AND b.guest_email IS NOT NULL
-          AND b.thank_you_sent_at IS NULL`
+          AND b.thank_you_sent_at IS NULL
+          -- Same reasoning as listPreArrivalDue's identical guard: a
+          -- departure staff closed never ran, so "thanks for rafting with
+          -- us" would thank a guest for a trip that didn't happen.
+          AND (ts.id IS NULL OR ts.is_blocked = 0)`
     )
     .bind(date, ...THANK_YOU_STATUSES)
     .all<DueBooking>();

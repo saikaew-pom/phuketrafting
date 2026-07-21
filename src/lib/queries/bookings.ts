@@ -454,6 +454,10 @@ export interface DaySheetSession {
   capacity: number;
   booked_count: number;
   allotment_hold: number;
+  /** Staff closed this departure (weather, private charter, ...). Its still-active
+   *  bookings are shown anyway -- see getDaySheet's own comment on why. */
+  is_blocked: number;
+  block_reason: string | null;
   bookings: DaySheetTourBooking[];
 }
 
@@ -500,12 +504,21 @@ export async function getDaySheet(date: string): Promise<DaySheet> {
   const activeIn = ACTIVE_STATUSES.map(() => "?").join(",");
 
   const [sessionRows, bookingRows, campArrivalRows, campDepartureRows] = await Promise.all([
+    // No is_blocked filter here -- see the grouping step below for why. A
+    // session closed via closeSession's "quiet" mode leaves its guests'
+    // bookings untouched on purpose (see notifications.ts's identical
+    // reasoning), so a departure can be closed and still have real guests
+    // expecting a pickup. Filtering it out here didn't cancel their booking,
+    // it just made the crew's own manifest silently stop mentioning them --
+    // the guest still turns up at the meeting point, and no one on the day
+    // sheet was told to expect them.
     db
       .prepare(
-        `SELECT ts.id, ts.start_time, ts.capacity, ts.booked_count, ts.allotment_hold, t.name AS tour_name
+        `SELECT ts.id, ts.start_time, ts.capacity, ts.booked_count, ts.allotment_hold,
+                ts.is_blocked, ts.block_reason, t.name AS tour_name
            FROM tour_sessions ts
            JOIN tours t ON ts.tour_id = t.id
-          WHERE ts.date = ?1 AND ts.is_blocked = 0
+          WHERE ts.date = ?1
           ORDER BY ts.start_time`
       )
       .bind(date)
@@ -568,7 +581,16 @@ export async function getDaySheet(date: string): Promise<DaySheet> {
 
   return {
     date,
-    sessions: sessionRows.results.map((s) => ({ ...s, bookings: bookingsBySession.get(s.id) ?? [] })),
+    // A normal (not blocked) session always shows, same as before, even with
+    // zero bookings -- that already tells staff "this departure is running,
+    // nobody's signed up yet." A BLOCKED one only shows if it still has an
+    // active booking attached: staff shouldn't have to scroll past every
+    // closed-and-empty departure that day, but the moment one closed session
+    // has a guest still expecting a pickup, it has to be on this list, not
+    // silently correct-by-omission.
+    sessions: sessionRows.results
+      .map((s) => ({ ...s, bookings: bookingsBySession.get(s.id) ?? [] }))
+      .filter((s) => !s.is_blocked || s.bookings.length > 0),
     campArrivals: campArrivalRows.results,
     campDepartures: campDepartureRows.results,
   };

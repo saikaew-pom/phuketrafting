@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Image from "next/image";
 import { CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET } from "@/lib/cloudinary";
 import { suggestCaptionAction } from "@/app/dashboard/gallery/actions";
@@ -31,6 +31,15 @@ interface Props {
  */
 export function MultiImageUploadField({ name }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
+  // Synchronous guard against a double-click firing two AI calls for the same
+  // row before React commits the first `suggesting: true` -- state alone
+  // isn't enough, since two clicks in the same synchronous turn both read
+  // `suggesting: false` before either setState takes effect (same reasoning
+  // as PhotoTags.tsx's busyRef / EditableCaption.tsx's labelRef). A Set, not
+  // a single boolean, because unlike those two this component has many rows
+  // that can each independently be mid-suggestion at once -- keyed by
+  // publicId for the same stable-identity reason updateRow already is.
+  const suggestingRef = useRef<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -102,14 +111,17 @@ export function MultiImageUploadField({ name }: Props) {
   }
 
   async function handleSuggest(publicId: string) {
+    if (suggestingRef.current.has(publicId)) return; // already in flight for this row
     const row = rows.find((r) => r.publicId === publicId);
     if (!row) return; // removed while an earlier suggestion for it was still in flight
     if (!row.hint.trim()) {
       updateRow(publicId, { error: 'Type a short hint first, e.g. "guests paddling through rapids".' });
       return;
     }
+    suggestingRef.current.add(publicId);
     updateRow(publicId, { suggesting: true, error: null });
     const result = await suggestCaptionAction(row.hint);
+    suggestingRef.current.delete(publicId);
     if (result.error) {
       updateRow(publicId, { suggesting: false, error: result.error });
       return;

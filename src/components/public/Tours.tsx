@@ -111,9 +111,22 @@ export function Tours({
                 </ul>
                 <div className="pr-tcard-foot">
                   <div className="pr-tcard-price">
-                    <span className="pr-tcard-from">from</span>
-                    <span className="pr-tcard-amt">{baht(tour.fromPrice)}</span>
-                    <span className="pr-tcard-per">/ person</span>
+                    {/* fromPrice is 0 only for a tour with no priced
+                        tour_rates row yet (staff created it, haven't set a
+                        price) -- never a genuinely free tour. "from ฿0" reads
+                        as a real, absurdly good offer rather than
+                        not-yet-configured, so this branch is a fallback
+                        message instead. Same fromPrice > 0 filter jsonld.ts's
+                        buildProductsJsonLd call already applies. */}
+                    {tour.fromPrice > 0 ? (
+                      <>
+                        <span className="pr-tcard-from">from</span>
+                        <span className="pr-tcard-amt">{baht(tour.fromPrice)}</span>
+                        <span className="pr-tcard-per">/ person</span>
+                      </>
+                    ) : (
+                      <span className="pr-tcard-from">Price on request</span>
+                    )}
                   </div>
                   {/* Instant tours go to the booking form with THIS tour
                       preselected (BookingWidget listens for #book-<id>).

@@ -156,21 +156,52 @@ export async function deleteTour(id: string): Promise<"ok" | "blocked"> {
 }
 
 /** Reorders a tour one slot earlier/later, swapping sort_order with its neighbour, atomically. */
+/**
+ * Most other move* function in this file family (tags, addons, images,
+ * tour-categories, faqs) can never see a tie: they only ever assign
+ * sort_order via COALESCE(MAX(sort_order), -1) + 1, so values stay strictly
+ * increasing. Tours are one exception -- the tour edit page also exposes
+ * sort_order as a free-text number field, so two tours can genuinely end up
+ * with the same value. (queries/camping.ts's moveCampZone has the identical
+ * exception and the identical fix, for the identical reason -- the camp zone
+ * edit page exposes the same free-text field.)
+ *
+ * A plain swap-with-neighbour (the shape every other move* function uses) has
+ * two failure modes once a tie exists, both reproduced against a scratch DB:
+ * a `WHERE sort_order < ?1` neighbour lookup skips every row tied with the
+ * current one, so one click could drag a third, unrelated tour along with
+ * the one actually being moved; and even after fixing the lookup to compare
+ * the full (sort_order, name) pair -- listTours()'s own tie-break -- SWAPPING
+ * two rows' sort_order does nothing observable when both values are already
+ * identical, so the arrow silently produces no visible reordering for a
+ * genuinely tied pair.
+ *
+ * Full renumber instead: read the whole list in true display order, swap the
+ * target row with its adjacent neighbour AS ARRAY POSITIONS (not as raw
+ * sort_order values), then write 0..n-1 back. This can't drag an unrelated
+ * row (only the two swapped array slots change), always produces a real,
+ * visible move even from a tie (a fresh 0..n-1 assignment can't collide with
+ * itself), and permanently de-duplicates any tie it touches as a side
+ * effect. Safe as a full-table rewrite because tours is a staff-curated
+ * product catalog, not user-generated content -- realistically dozens of
+ * rows, not thousands.
+ */
 export async function moveTour(id: string, direction: "up" | "down"): Promise<void> {
   const db = getDb();
-  const row = await db.prepare("SELECT sort_order FROM tours WHERE id = ?1").bind(id).first<{ sort_order: number }>();
-  if (!row) return;
-  const cmp = direction === "up" ? "<" : ">";
-  const order = direction === "up" ? "DESC" : "ASC";
-  const neighbour = await db
-    .prepare(`SELECT id, sort_order FROM tours WHERE sort_order ${cmp} ?1 ORDER BY sort_order ${order} LIMIT 1`)
-    .bind(row.sort_order)
-    .first<{ id: string; sort_order: number }>();
-  if (!neighbour) return;
-  await db.batch([
-    db.prepare("UPDATE tours SET sort_order = ?1 WHERE id = ?2").bind(neighbour.sort_order, id),
-    db.prepare("UPDATE tours SET sort_order = ?1 WHERE id = ?2").bind(row.sort_order, neighbour.id),
-  ]);
+  const { results: ordered } = await db
+    .prepare("SELECT id FROM tours ORDER BY sort_order, name")
+    .all<{ id: string }>();
+
+  const index = ordered.findIndex((t) => t.id === id);
+  if (index === -1) return;
+  const swapWith = direction === "up" ? index - 1 : index + 1;
+  if (swapWith < 0 || swapWith >= ordered.length) return;
+
+  [ordered[index], ordered[swapWith]] = [ordered[swapWith], ordered[index]];
+
+  await db.batch(
+    ordered.map((t, i) => db.prepare("UPDATE tours SET sort_order = ?1 WHERE id = ?2").bind(i, t.id))
+  );
 }
 
 export async function getTourRates(tourId: string): Promise<TourRate[]> {

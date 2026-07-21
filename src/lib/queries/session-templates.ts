@@ -84,7 +84,21 @@ export async function applyCapacityToFutureEmpty(
   tourId: string,
   weekday: number,
   startTime: string,
-  capacity: number
+  capacity: number,
+  // The template's capacity BEFORE this edit. Load-bearing, not optional:
+  // without it, saving the template retro-applied its new capacity to every
+  // future empty departure for the slot unconditionally -- including one
+  // staff had deliberately hand-set to a different number via the
+  // availability calendar's own setSessionCapacity (e.g. a raft added just
+  // for one date). Confirmed live: set one departure's capacity to 30 there,
+  // then save the template with an unrelated change (or none at all) here,
+  // and the calendar's 30 silently reverted back to the template's own
+  // value. Restricting to departures whose capacity still equals the OLD
+  // template value only touches rows that trace straight back to the
+  // template and were never individually overridden -- the same
+  // "don't revert a deliberate staff decision" guard undoBulkClose already
+  // applies to block_reason.
+  previousCapacity: number
 ): Promise<number> {
   const today = bangkokTodayISO();
   const res = await getDb()
@@ -92,9 +106,10 @@ export async function applyCapacityToFutureEmpty(
       `UPDATE tour_sessions SET capacity = ?1, updated_at = unixepoch()
         WHERE tour_id = ?2 AND start_time = ?3 AND date >= ?4
           AND CAST(strftime('%w', date) AS INTEGER) = ?5
-          AND booked_count = 0 AND is_blocked = 0 AND allotment_hold = 0`
+          AND booked_count = 0 AND is_blocked = 0 AND allotment_hold = 0
+          AND capacity = ?6`
     )
-    .bind(capacity, tourId, startTime, today, weekday)
+    .bind(capacity, tourId, startTime, today, weekday, previousCapacity)
     .run();
   return res.meta.changes ?? 0;
 }

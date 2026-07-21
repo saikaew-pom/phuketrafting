@@ -32,21 +32,18 @@ export async function saveCampZone(zoneId: string, formData: FormData) {
     throw new Error("Invalid sort order");
   }
 
-  await updateCampZone(zoneId, {
-    name,
-    tagline: String(formData.get("tagline") ?? "").trim(),
-    description: String(formData.get("description") ?? "").trim(),
-    is_active: formData.get("is_active") === "on",
-    cover_image_id: String(formData.get("cover_image_id") ?? "").trim(),
-    sleeps_label: String(formData.get("sleeps_label") ?? "").trim(),
-    sort_order: sortOrder,
-  });
-
-  // Rate rows are named rate-weekday-<id> / rate-weekend-<id>.
+  // Parse and validate every rate price BEFORE any write -- same "a bad one
+  // can't leave a half-saved product" ordering as saveTour's rateUpdates.
+  // This previously updated the zone's basics FIRST and only then validated
+  // rates one at a time: a blank/invalid weekend price on the second package
+  // threw AFTER the zone's name/tagline/etc had already committed, so a
+  // rejected save still silently renamed the zone. Rate rows are named
+  // rate-weekday-<id> / rate-weekend-<id>.
   const rateIds = new Set<string>();
   for (const key of formData.keys()) {
     if (key.startsWith("rate-weekday-")) rateIds.add(key.slice("rate-weekday-".length));
   }
+  const rateUpdates: { id: string; weekday: number; weekend: number }[] = [];
   for (const rateId of rateIds) {
     // Blank is rejected, not coerced: Number("") is 0, not NaN, so clearing a
     // nightly rate silently made the stay free. Money has no safe default.
@@ -60,7 +57,20 @@ export async function saveCampZone(zoneId: string, formData: FormData) {
     if (!Number.isFinite(weekday) || weekday < 0 || !Number.isFinite(weekend) || weekend < 0) {
       throw new Error(`Invalid price for rate ${rateId}`);
     }
-    await updateCampRatePrices(rateId, weekday, weekend);
+    rateUpdates.push({ id: rateId, weekday, weekend });
+  }
+
+  await updateCampZone(zoneId, {
+    name,
+    tagline: String(formData.get("tagline") ?? "").trim(),
+    description: String(formData.get("description") ?? "").trim(),
+    is_active: formData.get("is_active") === "on",
+    cover_image_id: String(formData.get("cover_image_id") ?? "").trim(),
+    sleeps_label: String(formData.get("sleeps_label") ?? "").trim(),
+    sort_order: sortOrder,
+  });
+  for (const { id, weekday, weekend } of rateUpdates) {
+    await updateCampRatePrices(id, weekday, weekend);
   }
 
   revalidatePath("/dashboard/products/camping");

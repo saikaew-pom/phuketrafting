@@ -200,15 +200,38 @@ export async function undoBulkClose(auditId: string, actorEmail: string): Promis
   // ?1 = the bulk close's reason (skips a date re-closed for a different one),
   // ?2.. = the recorded ids. block_reason is non-null on a bulk-closed row, so
   // `=` is the right comparison.
-  const placeholders = ids.map((_, i) => `?${i + 2}`).join(",");
-  const reopen = await db
-    .prepare(
-      `UPDATE tour_sessions SET is_blocked = 0, block_reason = NULL, updated_at = unixepoch()
-        WHERE is_blocked = 1 AND block_reason = ?1 AND id IN (${placeholders})`
-    )
-    .bind(row.reason, ...ids)
-    .run();
-  const reopened = reopen.meta.changes ?? 0;
+  //
+  // Chunked to <=99 ids per statement -- a single UPDATE with one placeholder
+  // per session id hits D1's 100-bound-parameter ceiling once the closed
+  // range is large enough (a tour running 2 departures/day only needs ~50
+  // days to get there; parseRange allows up to 366). The undo button existed
+  // specifically for a mistaken bulk close, so it dying on exactly the large
+  // ranges most likely to BE a mistake -- while the close itself succeeded --
+  // left staff to reopen hundreds of departures by hand. Same chunk-and-sum
+  // shape as session-generator.ts, adapted for one big IN(...) list instead
+  // of many independent single-row statements.
+  //
+  // Each chunk is its own db.batch() call, same as that precedent -- not one
+  // batch spanning every chunk, so this is retry-safe rather than
+  // all-or-nothing: if a later chunk throws, the WHERE clause (is_blocked = 1
+  // AND block_reason = ?1) is naturally idempotent, so re-running the whole
+  // undo only touches whatever chunk 1..k already reopened is now a no-op --
+  // no double-application risk, and staff can just retry.
+  const CHUNK = 99;
+  let reopened = 0;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const slice = ids.slice(i, i + CHUNK);
+    const placeholders = slice.map((_, j) => `?${j + 2}`).join(",");
+    const [result] = await db.batch([
+      db
+        .prepare(
+          `UPDATE tour_sessions SET is_blocked = 0, block_reason = NULL, updated_at = unixepoch()
+            WHERE is_blocked = 1 AND block_reason = ?1 AND id IN (${placeholders})`
+        )
+        .bind(row.reason, ...slice),
+    ]);
+    reopened += result.meta.changes ?? 0;
+  }
 
   await db.prepare("UPDATE availability_audit SET undone = 1 WHERE id = ?1").bind(auditId).run();
   await recordAudit({

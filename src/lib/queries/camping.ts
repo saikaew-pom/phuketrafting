@@ -92,22 +92,37 @@ export async function deleteCampZone(id: string): Promise<"ok" | "blocked"> {
   return "ok";
 }
 
-/** Reorders a camp zone, swapping sort_order with its neighbour, atomically. */
+/**
+ * Reorders a camp zone one slot, via a full renumber rather than a
+ * neighbour-value swap. Same bug, same fix, same reasoning as
+ * queries/tours.ts's moveTour: the camp zone edit page exposes sort_order as
+ * a free-text number field (products/camping/[id]/page.tsx), so two zones
+ * can genuinely end up with the same value, and a plain swap-with-neighbour
+ * either drags an unrelated third zone along (the WHERE lookup skips every
+ * row tied with the current one) or silently does nothing (swapping two
+ * already-equal values is a no-op) -- both reproduced against a scratch DB.
+ * Reading the whole list in true display order (listCampZones' own
+ * (sort_order, name) tie-break) and renumbering 0..n-1 sidesteps both: it
+ * always produces a real, visible move, and permanently de-duplicates any
+ * tie it touches. Safe as a full-table rewrite for the same reason as
+ * moveTour -- a handful of staff-curated zones, not thousands of rows.
+ */
 export async function moveCampZone(id: string, direction: "up" | "down"): Promise<void> {
   const db = getDb();
-  const row = await db.prepare("SELECT sort_order FROM camp_zones WHERE id = ?1").bind(id).first<{ sort_order: number }>();
-  if (!row) return;
-  const cmp = direction === "up" ? "<" : ">";
-  const order = direction === "up" ? "DESC" : "ASC";
-  const neighbour = await db
-    .prepare(`SELECT id, sort_order FROM camp_zones WHERE sort_order ${cmp} ?1 ORDER BY sort_order ${order} LIMIT 1`)
-    .bind(row.sort_order)
-    .first<{ id: string; sort_order: number }>();
-  if (!neighbour) return;
-  await db.batch([
-    db.prepare("UPDATE camp_zones SET sort_order = ?1 WHERE id = ?2").bind(neighbour.sort_order, id),
-    db.prepare("UPDATE camp_zones SET sort_order = ?1 WHERE id = ?2").bind(row.sort_order, neighbour.id),
-  ]);
+  const { results: ordered } = await db
+    .prepare("SELECT id FROM camp_zones ORDER BY sort_order, name")
+    .all<{ id: string }>();
+
+  const index = ordered.findIndex((z) => z.id === id);
+  if (index === -1) return;
+  const swapWith = direction === "up" ? index - 1 : index + 1;
+  if (swapWith < 0 || swapWith >= ordered.length) return;
+
+  [ordered[index], ordered[swapWith]] = [ordered[swapWith], ordered[index]];
+
+  await db.batch(
+    ordered.map((z, i) => db.prepare("UPDATE camp_zones SET sort_order = ?1 WHERE id = ?2").bind(i, z.id))
+  );
 }
 
 export async function getCampRates(zoneId: string): Promise<CampRate[]> {

@@ -261,8 +261,15 @@ export default async function LandingPage({ params }: { params: Promise<{ lang: 
     buildOrganizationJsonLd(),
     // Each offer URL points at the section the card really renders in, so the
     // anchor in the markup and the anchor on the page can't drift apart.
+    // fromPrice === 0 means "no priced tour_rates row yet" (a new tour
+    // between being created and staff adding its rates), not a genuinely
+    // free tour -- same reasoning as stickyFromPrice's own `p > 0` filter
+    // above. Without this, Google received a real, indexed Product offer at
+    // price 0 / InStock for a tour nobody could actually book at that price.
     ...buildProductsJsonLd(
-      sectionsToRender.flatMap((s) => s.tours.map((t) => ({ ...t, anchor: s.anchorId }))),
+      sectionsToRender
+        .flatMap((s) => s.tours.map((t) => ({ ...t, anchor: s.anchorId })))
+        .filter((t) => t.fromPrice > 0),
       lang
     ),
     // Skip FAQ markup entirely if staff have hidden them all -- an empty

@@ -11,6 +11,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   bad_date: "Dates must be in YYYY-MM-DD format.",
   date_order: "The 'valid until' date can't be before 'valid from'.",
   bad_cap: "Usage limit must be a whole number of at least 1.",
+  bad_tour: "That tour no longer exists -- pick another, or leave it unscoped.",
   duplicate: "That code already exists -- pick a different one.",
   has_bookings: "This code has been used on bookings, so it can't be deleted. Untick 'Active' to retire it instead.",
 };

@@ -20,6 +20,12 @@ export function bangkokTodayISO(now: Date = new Date()): string {
   return new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
+/** Same +7h shift as bangkokTodayISO, the "HH:MM" half instead of the date --
+ *  for comparing against tour_sessions.start_time's own "HH:MM" format. */
+export function bangkokNowTimeHHMM(now: Date = new Date()): string {
+  return new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(11, 16);
+}
+
 /**
  * D1 stores timestamps as unixepoch() seconds -- Date expects milliseconds.
  *

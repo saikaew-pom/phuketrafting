@@ -2891,7 +2891,16 @@ ul.pr-blog-categories {
   font-size: 16px;
   margin-bottom: 10px;
 }
-.pr-sheet-title span {
+/* Scoped to the specific "(x / y booked)" meta span, NOT a bare `span` --
+   the CLOSED badge (.pr-dash-badge) added later is also a <span> nested in
+   this same h4, and a bare-element selector here (specificity 0,1,1) used to
+   outrank .pr-dash-badge/.pr-dash-badge-danger (0,1,0 each) regardless of
+   source order, silently overriding the badge's bold/red text to this
+   meta span's muted/thin/small style -- confirmed live via computed styles
+   (color came out rgb(121,131,138) i.e. var(--ink-3), not the badge's own
+   #c03535, font-weight 400 not 700). That undid the whole point of the badge
+   (staff need CLOSED to visually jump out, not blend in). */
+.pr-sheet-title .pr-sheet-meta {
   font-family: var(--font-body);
   font-weight: 400;
   color: var(--ink-3);

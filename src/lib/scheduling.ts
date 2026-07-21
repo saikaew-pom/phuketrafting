@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+import { bangkokTodayISO, bangkokNowTimeHHMM } from "@/lib/format";
 
 /**
  * Capacity-safe primitives for the two booking models (plan §2), both
@@ -93,6 +94,16 @@ export async function listAvailableTourSessions(
   fromDate: string,
   toDate: string
 ): Promise<AvailableTourSession[]> {
+  // Same-day clamp, mirroring the guard booking.ts's createTourBooking
+  // already enforces at write time (source !== "staff"/"agent"). Without it,
+  // today's already-departed session was still OFFERED here at, say, 15:00
+  // for a 09:00 departure -- for the web widget that's just a dead-end click
+  // (createTourBooking correctly refuses it as not_found), but the chatbot's
+  // list_availability tool reads from this exact function, and a session a
+  // guest can be SHOWN by the bot but never actually book is a worse failure
+  // mode than one that's simply absent from the list.
+  const today = bangkokTodayISO();
+  const nowTime = bangkokNowTimeHHMM();
   const { results } = await getDb()
     .prepare(
       `SELECT id, date, start_time, capacity, booked_count, allotment_hold
@@ -101,9 +112,10 @@ export async function listAvailableTourSessions(
           AND date >= ?2 AND date <= ?3
           AND is_blocked = 0
           AND booked_count < capacity - allotment_hold
+          AND (date > ?4 OR (date = ?4 AND start_time > ?5))
         ORDER BY date, start_time`
     )
-    .bind(tourId, fromDate, toDate)
+    .bind(tourId, fromDate, toDate, today, nowTime)
     .all<AvailableTourSession>();
   return results;
 }

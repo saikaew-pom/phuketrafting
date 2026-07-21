@@ -10,6 +10,7 @@ import {
   promoCodeExists,
   type PromoCodeInput,
 } from "@/lib/queries/promos";
+import { getTour } from "@/lib/queries/tours";
 
 // Expected data-entry mistakes redirect back with a ?error= code (friendly
 // banner) instead of throwing an error production would redact. Same pattern
@@ -21,7 +22,7 @@ class PromoFormError extends Error {
 }
 
 /** Parses + validates the shared promo form. Throws PromoFormError on a bad field. */
-function parseForm(formData: FormData): PromoCodeInput {
+async function parseForm(formData: FormData): Promise<PromoCodeInput> {
   const code = String(formData.get("code") ?? "").trim().toUpperCase();
   if (!code || !/^[A-Z0-9_-]{2,40}$/.test(code)) throw new PromoFormError("bad_code");
 
@@ -49,6 +50,14 @@ function parseForm(formData: FormData): PromoCodeInput {
   }
 
   const scopeTourId = String(formData.get("scope_tour_id") ?? "").trim() || null;
+  // A non-empty id is a claim, not a fact -- verify the tour actually exists
+  // rather than trusting the <select>, same convention reviews/actions.ts
+  // already applies to its own tour_id field. promo_codes.scope_tour_id
+  // REFERENCES tours(id) with no ON DELETE clause and FKs enforced, so
+  // submitting a since-deleted tour's id previously reached the D1 INSERT/
+  // UPDATE raw and threw FOREIGN KEY constraint failed -- an opaque digest
+  // instead of this file's own friendly ?error= banner.
+  if (scopeTourId && !(await getTour(scopeTourId))) throw new PromoFormError("bad_tour");
 
   return {
     code,
@@ -72,7 +81,7 @@ export async function addPromoCode(formData: FormData): Promise<void> {
   await requireAdmin();
   let input: PromoCodeInput;
   try {
-    input = parseForm(formData);
+    input = await parseForm(formData);
     if (await promoCodeExists(input.code, null)) throw new PromoFormError("duplicate");
   } catch (err) {
     if (err instanceof PromoFormError) redirect(`/dashboard/promos?error=${err.code}`);
@@ -93,7 +102,7 @@ export async function savePromoCode(id: string, formData: FormData): Promise<voi
   await requireAdmin();
   let input: PromoCodeInput;
   try {
-    input = parseForm(formData);
+    input = await parseForm(formData);
     if (await promoCodeExists(input.code, id)) throw new PromoFormError("duplicate");
   } catch (err) {
     if (err instanceof PromoFormError) redirect(`/dashboard/promos?error=${err.code}`);

@@ -2,14 +2,20 @@ import { requireStaff } from "@/lib/access";
 import { listAllFaqs } from "@/lib/queries/faqs";
 import { addFaq, saveFaq, removeFaq, moveFaqAction } from "./actions";
 
+const ERRORS: Record<string, string> = {
+  fields_required: "Both question and answer are required.",
+};
+
 /**
  * The landing-page FAQ, staff-editable (moved out of the hardcoded FAQS
  * constant, migration 0017). The public accordion and the FAQPage JSON-LD
  * both read these rows, so an edit here updates both.
  */
-export default async function FaqsPage() {
+export default async function FaqsPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   await requireStaff();
   const faqs = await listAllFaqs();
+  const { error } = await searchParams;
+  const errorMessage = error ? (ERRORS[error] ?? "Something went wrong.") : null;
 
   return (
     <div>
@@ -17,6 +23,14 @@ export default async function FaqsPage() {
         <h1>FAQ</h1>
         <p>The questions on the home page. Order here is the order shown; unticking &quot;Shown&quot; hides one without deleting it.</p>
       </div>
+
+      {errorMessage && (
+        <div className="pr-dash-card" style={{ borderColor: "var(--accent-dark)", marginBottom: "16px" }}>
+          <p className="pr-dash-error" style={{ margin: 0 }}>
+            {errorMessage}
+          </p>
+        </div>
+      )}
 
       <div className="pr-dash-card">
         <h2>Add a question</h2>

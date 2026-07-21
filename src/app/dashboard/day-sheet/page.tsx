@@ -68,9 +68,20 @@ export default async function DaySheetPage({
         <div key={session.id} className="pr-dash-card pr-sheet-block">
           <h4 className="pr-sheet-title">
             {session.start_time} &mdash; {session.tour_name}{" "}
-            <span>
+            <span className="pr-sheet-meta">
               ({session.booked_count} / {session.capacity - session.allotment_hold} booked)
             </span>
+            {/* Only reachable with is_blocked=1 if it still has an active
+                booking on it (see getDaySheet's own filter) -- a guest who is
+                still expecting a pickup on a departure staff closed. The
+                badge is what actually tells crew that's the situation,
+                rather than a closed departure just quietly looking like a
+                normal one on the sheet. */}
+            {session.is_blocked === 1 && (
+              <span className="pr-dash-badge pr-dash-badge-danger" style={{ marginLeft: "8px" }}>
+                CLOSED{session.block_reason ? ` -- ${session.block_reason}` : ""}
+              </span>
+            )}
           </h4>
           {session.bookings.length === 0 ? (
             <div className="pr-dash-empty">No bookings for this departure.</div>

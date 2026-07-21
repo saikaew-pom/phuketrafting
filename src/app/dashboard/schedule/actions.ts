@@ -84,7 +84,12 @@ export async function updateScheduleSlot(templateId: string, formData: FormData)
     // this line and OFF-then-ON leaves every future departure closed while the
     // schedule screen reports the slot ON.
     await restoreFutureBlockedForSlot(tourId, tmpl!.weekday, tmpl!.start_time);
-    await applyCapacityToFutureEmpty(tourId, tmpl!.weekday, tmpl!.start_time, capacity);
+    // tmpl!.capacity is the value from BEFORE updateSessionTemplateActive
+    // just overwrote it above -- the "previous" capacity applyCapacityTo
+    // FutureEmpty needs to tell "never touched since the template" apart
+    // from "staff hand-set this one departure" (see that function's own
+    // comment).
+    await applyCapacityToFutureEmpty(tourId, tmpl!.weekday, tmpl!.start_time, capacity, tmpl!.capacity);
     await generateSessions(); // refill if it had been off
   } else {
     await blockFutureEmptyForSlot(tourId, tmpl!.weekday, tmpl!.start_time);

@@ -9,6 +9,15 @@ import { setImageTags } from "@/lib/queries/tags";
 import { suggestGalleryCaption } from "@/lib/gallery-ai";
 import { describeAiError } from "@/lib/ai";
 
+// Shared with updateGalleryCaptionAction below (hoisted here so both can see
+// it -- was previously declared after saveGalleryImages, which enforced
+// nothing at upload time). A caption typed at upload time went straight into
+// product_images.label with no length check, while editing that exact same
+// column afterward rejected anything over this limit -- so an over-long
+// upload caption could be saved once and then never edited again through the
+// UI (every Save attempt hit "Caption is too long").
+const MAX_CAPTION_LENGTH = 120;
+
 // Revalidate both the dashboard screen and the public landing page (all
 // locales) so an edit shows up on the site immediately. The gallery renders
 // inside the [lang] route.
@@ -69,7 +78,11 @@ export async function saveGalleryImages(prevCount: number, formData: FormData): 
   }
 
   for (const item of items) {
-    await addImage("gallery", null, item.image_id.trim(), item.label?.trim() || null);
+    // Truncate, don't reject: a caption is secondary to the photo it
+    // describes, so losing the whole upload over a too-long hint would be a
+    // worse outcome than a shortened caption staff can still edit afterward.
+    const label = item.label?.trim().slice(0, MAX_CAPTION_LENGTH) || null;
+    await addImage("gallery", null, item.image_id.trim(), label);
   }
   revalidateGallery();
   return prevCount + 1;
@@ -111,8 +124,9 @@ export interface UpdateResult {
 // hotel field was accepted with zero rejection before this"). This is an
 // RPC-style call with a single free-text argument, not a <form>'s FormData, so
 // there's no field-name-keyed table to route it through -- a direct bound
-// does the same job for the one field this action writes.
-const MAX_CAPTION_LENGTH = 120;
+// does the same job for the one field this action writes. (MAX_CAPTION_LENGTH
+// itself is declared once, near the top of this file, so saveGalleryImages
+// above can enforce the same limit at upload time.)
 
 /**
  * Renames an already-saved photo's caption. Called directly from
