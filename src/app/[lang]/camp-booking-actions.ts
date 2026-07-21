@@ -1,6 +1,7 @@
 "use server";
 
 import { headers } from "next/headers";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { z } from "zod";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
@@ -226,13 +227,20 @@ export async function submitCampBooking(
     }
 
     // Same acknowledgement the tour flow sends -- a camp guest who books and
-    // hears nothing is the same bug. Awaited (never fire-and-forget) because
-    // the Worker can be torn down as soon as this returns; sendBookingAck
-    // never throws, so a mail failure can't fail the booking.
+    // hears nothing is the same bug. Deferred via ctx.waitUntil, not awaited
+    // and not bare fire-and-forget -- see booking-actions.ts's
+    // submitTourBooking for the full reasoning (blocking here would delay
+    // this guest's Stripe redirect behind two Brevo sends it has nothing to
+    // do with; a bare un-awaited promise risks the Worker tearing down
+    // mid-send).
     //
     // getRequestOrigin(), not requestHeaders.get("host") directly -- see
-    // booking-actions.ts's submitTourBooking for why.
-    await sendBookingAck(result.bookingId!, await getRequestOrigin());
+    // booking-actions.ts's submitTourBooking for why. Resolved here, before
+    // handing off to waitUntil, for the same reason as there: it reads
+    // next/headers's headers(), which isn't safe to call from inside an
+    // already-detached background task.
+    const origin = await getRequestOrigin();
+    getCloudflareContext().ctx.waitUntil(sendBookingAck(result.bookingId!, origin));
 
     return {
       status: "success",

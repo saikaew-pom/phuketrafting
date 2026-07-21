@@ -59,13 +59,15 @@ async function sendViaBrevo(params: {
   html: string;
   replyTo?: { email: string; name?: string };
 }): Promise<void> {
-  // Bounded, like the Stripe client's own 8s cap: sendBookingAck is awaited
-  // inline before a booking action returns "Booked!", and it makes two
-  // sequential sends -- a hung Brevo (no response, TCP just stalls) would
-  // otherwise leave the guest waiting indefinitely, conclude it failed, and
-  // rebook, double-claiming a seat. It also serially stalls the daily
-  // notification cron (40 guests x hang). A timeout turns "hung" into a normal
-  // failed send that the caller's fail-open path already handles. (Audit A8.)
+  // Bounded, like the Stripe client's own 8s cap. sendBookingAck (two
+  // sequential sends) now runs via ctx.waitUntil rather than being awaited
+  // before a booking action responds, so a hung Brevo call no longer makes a
+  // *guest* wait -- but it still shouldn't be left running unbounded in the
+  // background, and the daily notification cron (lib/cron/scheduled-
+  // notifications.ts) calls this SERIALLY across every due booking that day,
+  // where one hang would stall every guest after it in the batch. A timeout
+  // turns "hung" into a normal failed send that the caller's fail-open path
+  // already handles. (Audit A8.)
   let response: Response;
   try {
     response = await fetch(BREVO_SEND_URL, {

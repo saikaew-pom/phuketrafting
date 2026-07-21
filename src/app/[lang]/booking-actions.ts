@@ -1,6 +1,7 @@
 "use server";
 
 import { headers } from "next/headers";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { z } from "zod";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
@@ -240,16 +241,30 @@ export async function submitTourBooking(_prevState: BookingFormState, formData: 
       return { status: "error", message: messages[result.reason ?? ""] ?? "Something went wrong -- please try WhatsApp instead." };
     }
 
-    // Awaited, not fire-and-forget: a Worker can be torn down the moment the
-    // response is returned, and an un-awaited promise would simply never run
-    // -- the guest would silently get no email. sendBookingAck never throws,
-    // so this can't turn a successful booking into an error.
+    // Deferred via ctx.waitUntil, not awaited: sendBookingAck makes two
+    // sequential Brevo API calls (guest ack, then staff notice), and awaiting
+    // it here used to sit directly in front of openCheckoutForBooking below --
+    // a paying guest's Stripe redirect was blocked behind two outbound email
+    // sends it has nothing to do with. Not bare fire-and-forget either
+    // (`void sendBookingAck(...)`): a Worker can be torn down the moment the
+    // response is returned, and an un-awaited-and-untracked promise would
+    // simply stop running mid-send -- the guest would silently get no email.
+    // ctx.waitUntil is the platform's own answer to exactly this: it keeps
+    // the Worker alive until the promise settles WITHOUT making the response
+    // wait for it, same mechanism custom-worker.ts's scheduled() handler
+    // already relies on. Safe to pass the promise directly with no .catch --
+    // sendBookingAck's own contract (see its doc comment) is that it never
+    // throws.
     //
     // getRequestOrigin(), not requestHeaders.get("host") directly -- it
     // validates the Host against known-good values and resolves http vs
     // https correctly, same helper openCheckoutForBooking above already
-    // uses for the Stripe success_url.
-    await sendBookingAck(result.bookingId!, await getRequestOrigin());
+    // uses for the Stripe success_url. Still resolved (await) before handing
+    // off to waitUntil: it reads next/headers's headers(), which needs the
+    // request context that's only guaranteed available during the request
+    // itself, not from inside a detached background task.
+    const origin = await getRequestOrigin();
+    getCloudflareContext().ctx.waitUntil(sendBookingAck(result.bookingId!, origin));
 
     return {
       status: "success",

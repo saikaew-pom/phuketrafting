@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { getDb } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { createTourBooking } from "@/lib/booking";
@@ -234,16 +235,23 @@ export async function POST(request: Request): Promise<Response> {
     // got no email and no self-service manage link for a real booking that
     // claimed a real seat -- manageToken was minted, returned in this route's
     // JSON, and then dropped, since ChatBookingCard only reads {ok, error}.
-    // sendBookingAck never throws (see its own contract), so this can't turn
-    // an already-successful booking into an error response -- same "awaited,
-    // not fire-and-forget" reasoning as the other two booking paths: a Worker
-    // can be torn down the instant this response returns.
+    // Deferred via ctx.waitUntil, not awaited and not bare fire-and-forget --
+    // same reasoning as booking-actions.ts's submitTourBooking: blocking here
+    // delays the {ok, bookingId} response ChatBookingCard is waiting on (and
+    // the "pending until staff confirm" chat reply below) behind two Brevo
+    // sends that have nothing to do with either, but a plain un-awaited
+    // promise risks the Worker tearing down mid-send. ctx.waitUntil keeps it
+    // alive without making the response wait. Safe with no .catch --
+    // sendBookingAck's own contract is that it never throws.
     //
     // getRequestOrigin(), not request.headers.get("host") directly -- see
     // booking-actions.ts's submitTourBooking for why. This is a Route Handler
     // rather than a Server Action, but getRequestOrigin() calls next/headers'
-    // headers() internally, which works the same in both contexts.
-    await sendBookingAck(result.bookingId!, await getRequestOrigin());
+    // headers() internally, which works the same in both contexts. Resolved
+    // here, before handing off to waitUntil, since headers() isn't safe to
+    // call from inside an already-detached background task.
+    const origin = await getRequestOrigin();
+    getCloudflareContext().ctx.waitUntil(sendBookingAck(result.bookingId!, origin));
 
     // Plan §9: "post-confirm message says 'pending until staff confirms' +
     // receptionist WhatsApp". Written into the thread so it survives a reload
