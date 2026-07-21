@@ -1,5 +1,7 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Sora, Plus_Jakarta_Sans } from "next/font/google";
+import "../globals.css";
 import { DEFAULT_LOCALE, isSupportedLocale } from "@/lib/i18n";
 import { Nav } from "@/components/public/Nav";
 import { Footer } from "@/components/public/Footer";
@@ -10,6 +12,16 @@ import { getChromeStrings, getTranslationMap } from "@/lib/queries/translations"
 import { mergeSections, SECTIONS_CONTENT_TYPE, GLOBAL_CONTENT_ID } from "@/lib/translatable-content";
 import { deriveThemeVars } from "@/lib/theme";
 import { Analytics } from "@/components/public/Analytics";
+
+// This IS the root layout for every public route (see the <html> below) --
+// formerly src/app/layout.tsx's job, moved here so <html lang> can be the
+// real locale instead of a hardcoded "en" on every TH/RU/ZH page. Pages
+// nested under this layout override title/description via their own
+// generateMetadata; this is only the fallback for the few that don't.
+export const metadata: Metadata = {
+  title: "Phuket Rafting",
+  description: "White-water rafting, ziplines and ATV adventures in Phang Nga, Thailand.",
+};
 
 const sora = Sora({
   variable: "--font-sora",
@@ -59,22 +71,27 @@ export default async function LangLayout({
   const vars = deriveThemeVars(theme.brandColor);
 
   return (
-    <div className={`pr-app ${sora.variable} ${plusJakartaSans.variable}`}>
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `.pr-app{--accent:${vars.accent};--accent-dark:${vars.accentDark};--accent-soft:${vars.accentSoft};}`,
-        }}
-      />
-      <Analytics />
-      <Nav locale={lang} logo={logo} strings={chrome} />
-      {children}
-      <Footer locale={lang} logo={logo} strapline={sections.footerStrapline} strings={chrome} />
-      <ConsentBanner locale={lang} />
-      {/* Server-side gate: staff turning the chatbot off must ship NO widget,
-          not a launcher that fails on click. Plan §9's master toggle. */}
-      {chat.enabled && (
-        <ChatWidget greeting="Hi! Ask me about tours, prices, pickup or what to bring. I'm an assistant -- our team confirms every booking." />
-      )}
-    </div>
+    <html lang={lang}>
+      <body>
+        <div className={`pr-app ${sora.variable} ${plusJakartaSans.variable}`}>
+          <style
+            dangerouslySetInnerHTML={{
+              __html: `.pr-app{--accent:${vars.accent};--accent-dark:${vars.accentDark};--accent-soft:${vars.accentSoft};}`,
+            }}
+          />
+          <Analytics />
+          <Nav locale={lang} logo={logo} strings={chrome} />
+          {children}
+          <Footer locale={lang} logo={logo} strapline={sections.footerStrapline} strings={chrome} />
+          <ConsentBanner locale={lang} />
+          {/* Server-side gate: staff turning the chatbot off must ship NO
+              widget, not a launcher that fails on click. Plan §9's master
+              toggle. */}
+          {chat.enabled && (
+            <ChatWidget greeting="Hi! Ask me about tours, prices, pickup or what to bring. I'm an assistant -- our team confirms every booking." />
+          )}
+        </div>
+      </body>
+    </html>
   );
 }

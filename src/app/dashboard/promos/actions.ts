@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireStaff } from "@/lib/access";
+import { requireAdmin } from "@/lib/access";
 import {
   createPromoCode,
   updatePromoCode,
@@ -63,7 +63,13 @@ function parseForm(formData: FormData): PromoCodeInput {
 }
 
 export async function addPromoCode(formData: FormData): Promise<void> {
-  await requireStaff();
+  // requireAdmin, not requireStaff: a promo code is a standing discount that
+  // creates real financial liability (percent/fixed off every future booking
+  // it matches, until deactivated or its cap runs out) -- the same class of
+  // decision this codebase already gates behind admin everywhere else
+  // (refunds, settings, schedule, closeSession). Any guide who can check a
+  // guest in could otherwise mint one.
+  await requireAdmin();
   let input: PromoCodeInput;
   try {
     input = parseForm(formData);
@@ -78,7 +84,13 @@ export async function addPromoCode(formData: FormData): Promise<void> {
 }
 
 export async function savePromoCode(id: string, formData: FormData): Promise<void> {
-  await requireStaff();
+  // requireAdmin, not requireStaff: a promo code is a standing discount that
+  // creates real financial liability (percent/fixed off every future booking
+  // it matches, until deactivated or its cap runs out) -- the same class of
+  // decision this codebase already gates behind admin everywhere else
+  // (refunds, settings, schedule, closeSession). Any guide who can check a
+  // guest in could otherwise mint one.
+  await requireAdmin();
   let input: PromoCodeInput;
   try {
     input = parseForm(formData);
@@ -93,7 +105,13 @@ export async function savePromoCode(id: string, formData: FormData): Promise<voi
 }
 
 export async function removePromoCode(id: string): Promise<void> {
-  await requireStaff();
+  // requireAdmin, not requireStaff: a promo code is a standing discount that
+  // creates real financial liability (percent/fixed off every future booking
+  // it matches, until deactivated or its cap runs out) -- the same class of
+  // decision this codebase already gates behind admin everywhere else
+  // (refunds, settings, schedule, closeSession). Any guide who can check a
+  // guest in could otherwise mint one.
+  await requireAdmin();
   const deleted = await deletePromoCode(id);
   revalidatePath("/dashboard/promos");
   // A used code can't be deleted (its bookings reference it) -- tell staff to

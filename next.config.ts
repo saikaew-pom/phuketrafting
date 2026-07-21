@@ -24,6 +24,16 @@ const nextConfig: NextConfig = {
   // -- no real content to preserve there.
   async redirects() {
     return [
+      // Replaces the old src/app/page.tsx (a bare `redirect()` component).
+      // Moved here so app/ has no leaf route left outside [lang]/ and
+      // dashboard/ -- see [lang]/layout.tsx's comment on why that matters:
+      // each is now its own root layout with its own <html lang>, and a
+      // React root layout must define <html>/<body>, so a page directly
+      // under app/ with neither ancestor would have nothing to render into.
+      // Resolved at build time via Next's routing manifest (same as every
+      // entry below), so this needs no component, no layout, and no runtime
+      // cost -- strictly simpler than the file it replaces.
+      { source: "/", destination: "/en", permanent: true },
       { source: "/home", destination: "/en", permanent: true },
       { source: "/about", destination: "/en#why", permanent: true },
       { source: "/services", destination: "/en#tours", permanent: true },

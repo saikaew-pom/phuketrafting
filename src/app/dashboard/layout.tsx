@@ -1,7 +1,18 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Sora, Plus_Jakarta_Sans } from "next/font/google";
+import "../globals.css";
 import { requireStaff, type StaffIdentity } from "@/lib/access";
 import { DashboardShell } from "./DashboardShell";
+
+// This IS the root layout for /dashboard/* -- formerly implicit via the
+// shared src/app/layout.tsx (deleted; see [lang]/layout.tsx's comment on why
+// each segment now owns its own <html>). The staff UI is never translated,
+// so "en" here is a real, permanent value, not the placeholder it was on the
+// public side.
+export const metadata: Metadata = {
+  title: "Staff Dashboard -- Phuket Rafting",
+};
 
 // Same font setup as src/app/[lang]/layout.tsx -- the variables MUST be
 // declared on a wrapper that also carries .pr-app, because --font-head/
@@ -58,8 +69,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
 
   return (
-    <div className={`${sora.variable} ${plusJakartaSans.variable}`}>
-      <DashboardShell staff={staff}>{children}</DashboardShell>
-    </div>
+    <html lang="en">
+      <body>
+        <div className={`${sora.variable} ${plusJakartaSans.variable}`}>
+          <DashboardShell staff={staff}>{children}</DashboardShell>
+        </div>
+      </body>
+    </html>
   );
 }

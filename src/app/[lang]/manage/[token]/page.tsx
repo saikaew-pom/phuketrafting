@@ -15,10 +15,16 @@ import { WaiverForm, type WaiverRow } from "@/components/public/WaiverForm";
 export const dynamic = "force-dynamic";
 
 // A guest-specific page keyed by a private link -- must never be indexed or
-// listed anywhere search engines crawl.
+// listed anywhere search engines crawl. referrer: "no-referrer" is
+// belt-and-braces alongside the Analytics.tsx redaction below -- this route's
+// manage_token is a real capability (cancel/reschedule request, waiver
+// submission), and even with GA4's page_location itself now redacted, an
+// outbound link a guest clicks FROM this page should not carry the token in
+// the Referer header to that third party either.
 export const metadata: Metadata = {
   title: "Manage your booking",
   robots: { index: false, follow: false },
+  referrer: "no-referrer",
 };
 
 const STATUS_LABEL: Record<string, string> = {

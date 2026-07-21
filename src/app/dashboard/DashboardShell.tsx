@@ -58,7 +58,11 @@ const NAV = [
   { href: "/dashboard/addons", label: "Add-ons", icon: Package },
   { href: "/dashboard/enquiries", label: "Enquiries", icon: Inbox },
   { href: "/dashboard/pickup", label: "Pickup zones", icon: MapPin },
-  { href: "/dashboard/promos", label: "Promo codes", icon: Ticket },
+  // adminOnly to match actions.ts's requireAdmin -- without this, a non-admin
+  // staff member would see a live "Promo codes" link that 500s the moment
+  // they try to create or edit one, the exact "visible but forbidden" dead
+  // end this flag exists to prevent for Schedule/Homepage/Appearance/Settings.
+  { href: "/dashboard/promos", label: "Promo codes", icon: Ticket, adminOnly: true },
   { href: "/dashboard/reviews", label: "Reviews", icon: Star },
   { href: "/dashboard/gallery", label: "Gallery", icon: Images },
   { href: "/dashboard/tags", label: "Tags", icon: Tags },

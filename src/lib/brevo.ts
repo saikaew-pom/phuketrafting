@@ -26,6 +26,24 @@ function resolveBrevoConfig(config?: BrevoConfig): BrevoConfig {
 }
 
 /**
+ * Header-destined fields must never carry CR/LF -- the body-content equivalent
+ * of escapeHtml below. Every guest-supplied name/subject that flows into this
+ * file goes through Zod schemas bounded with `.trim()`, which strips only
+ * LEADING/TRAILING whitespace -- an INTERIOR "\r\nBcc: attacker@evil.com" in a
+ * guest name survives validation intact and previously reached Brevo's JSON
+ * body raw. The transport is JSON (JSON.stringify escapes CR/LF as \r\n
+ * sequences), so exploiting this into a real header injection would require
+ * Brevo's own MIME encoder to un-escape and pass them through -- not verified
+ * either way -- but this file performed zero sanitization on these fields and
+ * relied entirely on an untested third-party guarantee to do it instead.
+ * Applied once in sendViaBrevo, the one chokepoint every send passes through,
+ * so no future caller can reintroduce the gap by forgetting to call this.
+ */
+function sanitizeHeader(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").trim();
+}
+
+/**
  * Fires one Brevo send. Every function below builds a subject + HTML body
  * (via renderEmailLayout) and hands it here -- this is the one place that
  * actually talks to the API, so the fetch call, headers and error handling
@@ -54,9 +72,11 @@ async function sendViaBrevo(params: {
       headers: { "api-key": params.apiKey, "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({
         sender: { email: params.senderEmail, name: params.senderName },
-        to: params.to,
-        ...(params.replyTo ? { replyTo: params.replyTo } : {}),
-        subject: params.subject,
+        to: params.to.map((t) => (t.name ? { ...t, name: sanitizeHeader(t.name) } : t)),
+        ...(params.replyTo
+          ? { replyTo: params.replyTo.name ? { ...params.replyTo, name: sanitizeHeader(params.replyTo.name) } : params.replyTo }
+          : {}),
+        subject: sanitizeHeader(params.subject),
         htmlContent: params.html,
       }),
       signal: AbortSignal.timeout(10_000),

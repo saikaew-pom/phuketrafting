@@ -38,7 +38,24 @@ export function Analytics() {
           window.dataLayer = window.dataLayer || [];
           function gtag(){dataLayer.push(arguments);}
           gtag('js', new Date());
-          gtag('config', '${measurementId}');
+          // page_location defaults to the full location.href, which on
+          // /[lang]/manage/[token] IS the guest's manage_token -- a real
+          // capability (cancel/reschedule, waiver submission), sent to Google
+          // as a cookieless ping BEFORE any consent choice, since Consent
+          // Mode's analytics_storage:'denied' above suppresses cookies, not
+          // transmission. Redacting the token segment here means the token
+          // never leaves the browser via GA4, on every page, without this
+          // component needing to know which routes are token-bearing.
+          // location.hash is appended back on unredacted -- omitting it here
+          // would silently drop landing-section granularity (the homepage's
+          // #tours/#why/#contact anchors, which next.config.ts's legacy
+          // redirect map sends real traffic to) for every page, not just
+          // /manage/[token]. Confirmed live: without this, /en#tours reported
+          // page_location "/en", losing the #tours part GA4's own default
+          // (bare location.href) would have sent.
+          gtag('config', '${measurementId}', {
+            page_location: location.origin + location.pathname.replace(/\\/manage\\/[^/]+/, '/manage/[token]') + location.search + location.hash
+          });
         `}
       </Script>
     </>
