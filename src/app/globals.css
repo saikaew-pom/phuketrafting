@@ -2150,6 +2150,17 @@ ul.pr-blog-categories {
 .pr-chat-card form {
   display: grid;
   gap: 6px;
+  /* Grid items default to min-width:auto, so a fixed-size child (the Turnstile
+     box) would otherwise force the whole form -- inputs and Confirm button
+     included -- wider than the card and out past .pr-chat's clipped edge. */
+  min-width: 0;
+}
+/* Turnstile renders a fixed-size box into this container (compact, 150x140 --
+   see ChatBookingCard.tsx for why not the 300px normal size). Centred so it
+   doesn't sit visually detached from the full-width fields around it. */
+.pr-chat-turnstile {
+  min-width: 0;
+  justify-self: center;
 }
 .pr-chat-card-note {
   margin: 0;

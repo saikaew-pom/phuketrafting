@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { getDb } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { verifyTurnstile } from "@/lib/turnstile";
 import { createTourBooking } from "@/lib/booking";
 import { getChatPolicy } from "@/lib/queries/settings";
 import { appendMessage } from "@/lib/queries/conversations";
@@ -21,6 +22,12 @@ import { getRequestOrigin } from "@/lib/request-origin";
  *
  * The draft token is the capability. Not the chat sessionId, which is
  * client-supplied and therefore carries no authority (see /api/chat).
+ *
+ * Turnstile-gated like submitTourBooking/submitCampBooking, unlike a pure
+ * read such as previewTourPrice: this route creates a real booking and
+ * claims a real seat, the same class of action as the two public widgets --
+ * a scripted caller with a valid (replayed or freshly-scraped) draft token
+ * could otherwise hammer this exactly as it could either of them.
  */
 export const dynamic = "force-dynamic";
 
@@ -60,6 +67,36 @@ export async function POST(request: Request): Promise<Response> {
   } catch {
     return Response.json({ error: "Invalid request" }, { status: 400 });
   }
+
+  // Checked before the Zod parse below, same order as submitTourBooking:
+  // fail the bot check before spending work validating (and echoing back
+  // detailed errors about) the rest of an unverified caller's input. Read
+  // directly off the raw body rather than through ConfirmSchema -- it's a
+  // bot-check artifact, not guest data, the same distinction booking-
+  // actions.ts draws by reading it off FormData rather than folding it into
+  // BookingSchema.
+  const turnstileToken =
+    typeof body === "object" && body !== null && "turnstileToken" in body ? String((body as { turnstileToken: unknown }).turnstileToken ?? "") : "";
+  // verifyTurnstile THROWS on a missing TURNSTILE_SECRET_KEY. Unlike
+  // submitTourBooking, whose whole body is inside a try, that call sits above
+  // this route's try/catch -- so an uncaught throw here escapes as Next's HTML
+  // 500 page, and ChatBookingCard's `await res.json()` then chokes on HTML and
+  // tells the guest to check their connection. Fail closed, but say so in the
+  // JSON shape the card actually parses.
+  let isHuman: boolean;
+  try {
+    isHuman = await verifyTurnstile(turnstileToken, cfIp);
+  } catch (err) {
+    console.error("chat confirm turnstile check failed", err);
+    return Response.json(
+      { error: `Something went wrong -- please message us on WhatsApp: https://wa.me/${WHATSAPP_NUMBER}` },
+      { status: 500 }
+    );
+  }
+  if (!isHuman) {
+    return Response.json({ error: "We couldn't verify you're human -- please try again." }, { status: 400 });
+  }
+
   const parsed = ConfirmSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json({ error: parsed.error.issues[0]?.message ?? "Please check your details." }, { status: 400 });
