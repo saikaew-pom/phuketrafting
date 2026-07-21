@@ -1,6 +1,14 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "phuket-rafting",
+  // The OAuth login this project uses has access to two Cloudflare accounts
+  // ("Joe Account" and this one) -- without this, every deploy/d1/etc. command
+  // stops for an interactive account picker, which blocks any unattended
+  // deploy outright. Confirmed this is the right one non-interactively (not
+  // guessed): `CLOUDFLARE_ACCOUNT_ID=8d3b88fb... wrangler d1 info
+  // phuket-rafting-db` returns the exact database_id already configured below,
+  // with real read/write traffic against it.
+  "account_id": "8d3b88fb762aaac5e9feca0421310dfb",
   // Points at the custom wrapper below, not .open-next/worker.js directly —
   // the generated worker only exports `fetch`; Cron Triggers need `scheduled` too.
   "main": "./custom-worker.ts",
